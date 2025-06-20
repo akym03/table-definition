@@ -1,10 +1,64 @@
-console.log('Hello, TypeScript with ES2024!')
+import { CLIController } from './interface/cli/CLIController'
+import { config } from 'dotenv'
 
-export function greet(name: string): string {
-  return `Hello, ${name}!`
+// 環境変数を読み込み
+config()
+
+/**
+ * コマンドライン引数を解析
+ */
+function parseArgs(): import('./interface/cli/CLIController').CLIArgs {
+  const args = process.argv.slice(2)
+  const result: import('./interface/cli/CLIController').CLIArgs = {}
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+
+    switch (arg) {
+      case '-o':
+      case '--output':
+        result.output = args[++i]
+        break
+      case '-t':
+      case '--template':
+        result.template = args[++i]
+        break
+      case '--tables':
+        result.tables = args[++i]?.split(',').map((t) => t.trim())
+        break
+      case '--logical-names':
+        result.preferLogicalNames = true
+        break
+      case '--no-constraints':
+        result.includeConstraints = false
+        break
+      case '-h':
+      case '--help':
+        result.help = true
+        break
+    }
+  }
+
+  return result
 }
 
-// ES2024の機能例
-const numbers = [1, 2, 3, 4, 5]
-const doubled = numbers.map((n) => n * 2)
-console.log('Doubled numbers:', doubled)
+/**
+ * メイン処理
+ */
+async function main(): Promise<void> {
+  const args = parseArgs()
+  const controller = new CLIController()
+
+  if (args.help) {
+    controller.showHelp()
+    return
+  }
+
+  await controller.exportDatabaseDefinition(args)
+}
+
+// アプリケーション実行
+main().catch((error) => {
+  console.error('アプリケーションエラー:', error)
+  process.exit(1)
+})

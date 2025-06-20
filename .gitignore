@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-pnpm-lock.yaml
 
 # Build output
 dist/
@@ -42,7 +41,7 @@ coverage/
 
 # Temporary folders
 tmp/
-temp/ 
+temp/
 
 
 # VSCode backup files

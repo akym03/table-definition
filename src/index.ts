@@ -1,4 +1,4 @@
-import { CLIController } from './interface/cli/CLIController'
+import * as cli from './interface/cli/CLIController'
 import { config } from 'dotenv'
 
 // 環境変数を読み込み
@@ -47,14 +47,12 @@ function parseArgs(): import('./interface/cli/CLIController').CLIArgs {
  */
 async function main(): Promise<void> {
   const args = parseArgs()
-  const controller = new CLIController()
-
   if (args.help) {
-    controller.showHelp()
+    cli.showHelp()
     return
   }
 
-  await controller.exportDatabaseDefinition(args)
+  await cli.exportDatabaseDefinitionCLI(args)
 }
 
 // アプリケーション実行

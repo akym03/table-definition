@@ -1,37 +1,60 @@
 /**
  * 参照整合性制約を表現するエンティティ
  */
-export class ReferentialConstraint {
-  constructor(
-    public readonly constraintName: string,
-    public readonly sourceTable: string,
-    public readonly sourceColumn: string,
-    public readonly referencedTable: string,
-    public readonly referencedColumn: string,
-    public readonly onDelete: ConstraintAction,
-    public readonly onUpdate: ConstraintAction,
-    public readonly isEnabled: boolean = true
-  ) {}
+export interface ReferentialConstraint {
+  readonly constraintName: string
+  readonly sourceTable: string
+  readonly sourceColumn: string
+  readonly referencedTable: string
+  readonly referencedColumn: string
+  readonly onDelete: ConstraintAction
+  readonly onUpdate: ConstraintAction
+  readonly isEnabled: boolean
+}
 
-  /**
-   * 制約の完全な定義を文字列で取得
-   */
-  getDefinition(): string {
-    return `${this.sourceTable}.${this.sourceColumn} -> ${this.referencedTable}.${this.referencedColumn}`
+/**
+ * ReferentialConstraintオブジェクトを作成
+ */
+export function createReferentialConstraint(
+  constraintName: string,
+  sourceTable: string,
+  sourceColumn: string,
+  referencedTable: string,
+  referencedColumn: string,
+  onDelete: ConstraintAction,
+  onUpdate: ConstraintAction,
+  isEnabled: boolean = true
+): ReferentialConstraint {
+  return {
+    constraintName,
+    sourceTable,
+    sourceColumn,
+    referencedTable,
+    referencedColumn,
+    onDelete,
+    onUpdate,
+    isEnabled,
   }
+}
 
-  /**
-   * 制約が有効かどうかを判定
-   */
-  isValid(): boolean {
-    return (
-      this.constraintName.length > 0 &&
-      this.sourceTable.length > 0 &&
-      this.sourceColumn.length > 0 &&
-      this.referencedTable.length > 0 &&
-      this.referencedColumn.length > 0
-    )
-  }
+/**
+ * 制約の完全な定義を文字列で取得
+ */
+export function getConstraintDefinition(constraint: ReferentialConstraint): string {
+  return `${constraint.sourceTable}.${constraint.sourceColumn} -> ${constraint.referencedTable}.${constraint.referencedColumn}`
+}
+
+/**
+ * 制約が有効かどうかを判定
+ */
+export function isValidConstraint(constraint: ReferentialConstraint): boolean {
+  return (
+    constraint.constraintName.length > 0 &&
+    constraint.sourceTable.length > 0 &&
+    constraint.sourceColumn.length > 0 &&
+    constraint.referencedTable.length > 0 &&
+    constraint.referencedColumn.length > 0
+  )
 }
 
 /**

@@ -16,7 +16,6 @@ export interface DatabaseConnectionConfig {
   database: string
   username: string
   password: string
-  ssl?: boolean
   connectionTimeout?: number
   requestTimeout?: number
 }

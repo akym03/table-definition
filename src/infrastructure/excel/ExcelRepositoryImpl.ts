@@ -1,6 +1,9 @@
 import { ExcelRepository } from '../../domain/repositories/ExcelRepository'
 import { Database } from '../../domain/entities/Database'
+import { Table } from '../../domain/entities/Table'
 import { ExcelError } from '../../shared/errors/AppError'
+import { hasLogicalName } from '../../domain/entities/Name'
+
 import ExcelJS from 'exceljs'
 import path from 'path'
 import fs from 'fs/promises'
@@ -24,9 +27,9 @@ export class ExcelRepositoryImpl implements ExcelRepository {
 
       // 各テーブルの詳細シートを作成
       for (const table of database.tables) {
-        const tableName = table.name.hasLogicalName()
-          ? table.getLogicalName()
-          : table.getPhysicalName()
+        const tableName = hasLogicalName(table.name)
+          ? table.name.logicalName
+          : table.name.physicalName
         const tableSheet = workbook.addWorksheet(tableName.substring(0, 31)) // Excel制限
         await this.createTableDetailSheet(tableSheet, table)
       }
@@ -67,11 +70,11 @@ export class ExcelRepositoryImpl implements ExcelRepository {
     // データ行
     database.tables.forEach((table) => {
       sheet.addRow([
-        table.getPhysicalName(),
-        table.getLogicalName(),
+        table.name.physicalName,
+        table.name.logicalName,
         table.schema,
         table.columns.length,
-        table.getComment(),
+        table.name.comment,
       ])
     })
 
@@ -90,10 +93,10 @@ export class ExcelRepositoryImpl implements ExcelRepository {
    */
   private async createTableDetailSheet(sheet: ExcelJS.Worksheet, table: Table): Promise<void> {
     // テーブル情報
-    sheet.addRow(['テーブル名（物理）', table.getPhysicalName()])
-    sheet.addRow(['テーブル名（論理）', table.getLogicalName()])
+    sheet.addRow(['テーブル名（物理）', table.name.physicalName])
+    sheet.addRow(['テーブル名（論理）', table.name.logicalName])
     sheet.addRow(['スキーマ', table.schema])
-    sheet.addRow(['コメント', table.getComment()])
+    sheet.addRow(['コメント', table.name.comment])
     sheet.addRow([]) // 空行
 
     // カラム情報ヘッダー
@@ -115,8 +118,8 @@ export class ExcelRepositoryImpl implements ExcelRepository {
     // カラムデータ
     table.columns.forEach((column) => {
       sheet.addRow([
-        column.getPhysicalName(),
-        column.getLogicalName(),
+        column.name.physicalName,
+        column.name.logicalName,
         column.dataType,
         column.isNullable ? 'YES' : 'NO',
         column.defaultValue || '',
@@ -126,7 +129,7 @@ export class ExcelRepositoryImpl implements ExcelRepository {
         column.isPrimaryKey ? '○' : '',
         column.isUnique ? '○' : '',
         column.isAutoIncrement ? '○' : '',
-        column.getComment(),
+        column.name.comment,
       ])
     })
 

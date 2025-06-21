@@ -1,57 +1,67 @@
 /**
  * 論理名と物理名を管理するValue Object
  */
-export class Name {
-  public readonly logicalName: string
-  public readonly physicalName: string
-  public readonly comment: string
+export interface Name {
+  readonly logicalName: string
+  readonly physicalName: string
+  readonly comment: string
+}
 
-  constructor(physicalName: string, comment: string | null = null) {
-    this.physicalName = physicalName
+/**
+ * Nameオブジェクトを作成
+ */
+export function createName(physicalName: string, comment: string | null = null): Name {
+  if (comment && comment.trim().length > 0) {
+    const parts = comment.trim().split(/\s+/, 2)
+    const logicalName = parts[0] || physicalName
+    const finalComment = parts.length > 1 ? parts.slice(1).join(' ') : ''
 
-    if (comment && comment.trim().length > 0) {
-      const parts = comment.trim().split(/\s+/, 2)
-      this.logicalName = parts[0] || physicalName
-      this.comment = parts.length > 1 ? parts.slice(1).join(' ') : ''
-    } else {
-      this.logicalName = physicalName
-      this.comment = ''
+    return {
+      physicalName,
+      logicalName,
+      comment: finalComment,
     }
   }
 
-  /**
-   * 論理名を持っているかどうかを判定
-   */
-  hasLogicalName(): boolean {
-    return this.logicalName !== this.physicalName
+  return {
+    physicalName,
+    logicalName: physicalName,
+    comment: '',
   }
+}
 
-  /**
-   * コメントを持っているかどうかを判定
-   */
-  hasComment(): boolean {
-    return this.comment.length > 0
-  }
+/**
+ * 論理名を持っているかどうかを判定
+ */
+export function hasLogicalName(name: Name): boolean {
+  return name.logicalName !== name.physicalName
+}
 
-  /**
-   * 表示用の名前を取得（論理名優先）
-   */
-  getDisplayName(): string {
-    return this.hasLogicalName() ? this.logicalName : this.physicalName
-  }
+/**
+ * コメントを持っているかどうかを判定
+ */
+export function hasComment(name: Name): boolean {
+  return name.comment.length > 0
+}
 
-  /**
-   * 完全な文字列表現を取得
-   */
-  toString(): string {
-    if (this.hasLogicalName() && this.hasComment()) {
-      return `${this.logicalName} (${this.physicalName}) - ${this.comment}`
-    } else if (this.hasLogicalName()) {
-      return `${this.logicalName} (${this.physicalName})`
-    } else if (this.hasComment()) {
-      return `${this.physicalName} - ${this.comment}`
-    } else {
-      return this.physicalName
-    }
+/**
+ * 表示用の名前を取得（論理名優先）
+ */
+export function getDisplayName(name: Name): string {
+  return hasLogicalName(name) ? name.logicalName : name.physicalName
+}
+
+/**
+ * 完全な文字列表現を取得
+ */
+export function nameToString(name: Name): string {
+  if (hasLogicalName(name) && hasComment(name)) {
+    return `${name.logicalName} (${name.physicalName}) - ${name.comment}`
+  } else if (hasLogicalName(name)) {
+    return `${name.logicalName} (${name.physicalName})`
+  } else if (hasComment(name)) {
+    return `${name.physicalName} - ${name.comment}`
+  } else {
+    return name.physicalName
   }
 }

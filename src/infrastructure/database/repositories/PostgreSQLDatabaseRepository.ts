@@ -1,7 +1,7 @@
 import { DatabaseRepository } from '../../../domain/repositories/DatabaseRepository'
-import { Database } from '../../../domain/entities/Database'
-import { Table } from '../../../domain/entities/Table'
-import { Column } from '../../../domain/entities/Column'
+import { Database, createDatabase } from '../../../domain/entities/Database'
+import { Table, createTable } from '../../../domain/entities/Table'
+import { Column, createColumn } from '../../../domain/entities/Column'
 import { ReferentialConstraint } from '../../../domain/entities/ReferentialConstraint'
 import { DatabaseConnectionConfig } from '../../../shared/types/DatabaseType'
 import { DatabaseError } from '../../../shared/errors/AppError'
@@ -25,7 +25,7 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
       const databaseInfo = await this.retrieveDatabaseInfo()
       const tables = await this.retrieveTables()
 
-      return new Database(
+      return createDatabase(
         databaseInfo.name,
         databaseInfo.version,
         databaseInfo.charset,
@@ -73,7 +73,6 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
       user: this.config.username,
       password: this.config.password,
       database: this.config.database,
-      ssl: this.config.ssl,
     })
 
     await this.client.connect()
@@ -125,7 +124,7 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
       const columns = await this.retrieveColumns(row.table_name)
       const constraints = await this.retrieveReferentialConstraints()
 
-      const table = new Table(
+      const table = createTable(
         row.table_name,
         null, // PostgreSQLのコメント取得は別途実装が必要
         row.table_schema,
@@ -165,7 +164,7 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
     )
 
     return result.rows.map((row) => {
-      return new Column(
+      return createColumn(
         row.column_name,
         null, // コメント取得は別途実装
         row.data_type,

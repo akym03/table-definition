@@ -3,10 +3,9 @@ import { Database } from '../../domain/entities/Database'
 import { Table } from '../../domain/entities/Table'
 import { ExcelError } from '../../shared/errors/AppError'
 import { hasLogicalName } from '../../domain/entities/Name'
+import { existsSync } from 'fs'
 
 import ExcelJS from 'exceljs'
-import path from 'path'
-import fs from 'fs/promises'
 
 /**
  * Excel出力リポジトリの実装
@@ -46,8 +45,7 @@ export class ExcelRepositoryImpl implements ExcelRepository {
    */
   hasTemplate(): boolean {
     try {
-      require('fs').existsSync(this.templatePath)
-      return true
+      return existsSync(this.templatePath)
     } catch {
       return false
     }

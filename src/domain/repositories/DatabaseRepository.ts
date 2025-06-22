@@ -1,4 +1,4 @@
-import { Database } from '../entities/Database'
+import { Database } from '@/domain/entities/Database'
 
 /**
  * データベースリポジトリのインターフェース

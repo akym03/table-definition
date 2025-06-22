@@ -1,7 +1,7 @@
-import { DatabaseRepository } from '../../../domain/repositories/DatabaseRepository'
-import { createMySQLDatabaseRepository } from './MySQLDatabaseRepository'
-import { PostgreSQLDatabaseRepository } from './PostgreSQLDatabaseRepository'
-import { DatabaseConnectionConfig, DatabaseType } from '../../../shared/types/DatabaseType'
+import { DatabaseRepository } from '@/domain/repositories/DatabaseRepository'
+import { createMySQLDatabaseRepository } from '@/infrastructure/database/repositories/MySQLDatabaseRepository'
+import { PostgreSQLDatabaseRepository } from '@/infrastructure/database/repositories/PostgreSQLDatabaseRepository'
+import { DatabaseConnectionConfig, DatabaseType } from '@/shared/types/DatabaseType'
 
 /**
  * 設定に基づいてデータベースリポジトリを作成

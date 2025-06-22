@@ -6,6 +6,10 @@
     "lib": ["ES2024", "DOM"],
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -32,4 +36,4 @@
     "node_modules",
     "dist"
   ]
-} 
+}

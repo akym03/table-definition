@@ -1,4 +1,4 @@
-import * as cli from './interface/cli/CLIController'
+import * as cli from '@/interface/cli/CLIController'
 import { config } from 'dotenv'
 
 // 環境変数を読み込み

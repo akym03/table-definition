@@ -1,16 +1,16 @@
-import { DatabaseRepository } from '../../../domain/repositories/DatabaseRepository'
-import { Database, createDatabase } from '../../../domain/entities/Database'
-import { Table, createTable } from '../../../domain/entities/Table'
-import { Column, createColumn } from '../../../domain/entities/Column'
+import { DatabaseRepository } from '@/domain/repositories/DatabaseRepository'
+import { Database, createDatabase } from '@/domain/entities/Database'
+import { Table, createTable } from '@/domain/entities/Table'
+import { Column, createColumn } from '@/domain/entities/Column'
 import {
   ReferentialConstraint,
   ConstraintAction,
   createReferentialConstraint,
-} from '../../../domain/entities/ReferentialConstraint'
-import { DatabaseConnectionConfig } from '../../../shared/types/DatabaseType'
-import { DatabaseError } from '../../../shared/errors/AppError'
+} from '@/domain/entities/ReferentialConstraint'
+import { DatabaseConnectionConfig } from '@/shared/types/DatabaseType'
+import { DatabaseError } from '@/shared/errors/AppError'
 import mysql from 'mysql2/promise'
-import { DatabaseInfo, isValidVersionResult } from '../types/QueryTypes'
+import { DatabaseInfo, isValidVersionResult } from '@/infrastructure/database/types/QueryTypes'
 
 // MySQL固有の型定義
 type ColumnKeyType = 'PRI' | 'UNI' | 'MUL' | ''

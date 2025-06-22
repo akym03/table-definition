@@ -1,16 +1,20 @@
-import { DatabaseRepository } from '../../../domain/repositories/DatabaseRepository'
-import { Database, createDatabase } from '../../../domain/entities/Database'
-import { Table, createTable } from '../../../domain/entities/Table'
-import { Column, createColumn } from '../../../domain/entities/Column'
+import { DatabaseRepository } from '@/domain/repositories/DatabaseRepository'
+import { Database, createDatabase } from '@/domain/entities/Database'
+import { Table, createTable } from '@/domain/entities/Table'
+import { Column, createColumn } from '@/domain/entities/Column'
 import {
   ReferentialConstraint,
   ConstraintAction,
   createReferentialConstraint,
-} from '../../../domain/entities/ReferentialConstraint'
-import { DatabaseConnectionConfig } from '../../../shared/types/DatabaseType'
-import { DatabaseError } from '../../../shared/errors/AppError'
+} from '@/domain/entities/ReferentialConstraint'
+import { DatabaseConnectionConfig } from '@/shared/types/DatabaseType'
+import { DatabaseError } from '@/shared/errors/AppError'
 import { Client } from 'pg'
-import { DatabaseInfo, ConstraintRuleType, isValidVersionResult } from '../types/QueryTypes'
+import {
+  DatabaseInfo,
+  ConstraintRuleType,
+  isValidVersionResult,
+} from '@/infrastructure/database/types/QueryTypes'
 
 // PostgreSQL固有のクエリ結果型定義
 interface VersionQueryResult {

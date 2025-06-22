@@ -1,8 +1,8 @@
-import { ExcelRepository } from '../../domain/repositories/ExcelRepository'
-import { Database } from '../../domain/entities/Database'
-import { Table } from '../../domain/entities/Table'
-import { ExcelError } from '../../shared/errors/AppError'
-import { hasLogicalName } from '../../domain/entities/Name'
+import { ExcelRepository } from '@/domain/repositories/ExcelRepository'
+import { Database } from '@/domain/entities/Database'
+import { Table } from '@/domain/entities/Table'
+import { ExcelError } from '@/shared/errors/AppError'
+import { hasLogicalName } from '@/domain/entities/Name'
 import { existsSync } from 'fs'
 
 import ExcelJS from 'exceljs'

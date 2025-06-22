@@ -1,9 +1,9 @@
-import { DatabaseRepository } from '../../domain/repositories/DatabaseRepository'
-import { ExcelRepository } from '../../domain/repositories/ExcelRepository'
-import { validateDatabase } from '../../domain/services/DatabaseDefinitionService'
-import { ExportRequest, ExportResult } from '../dto/ExportRequest'
-import { AppError } from '../../shared/errors/AppError'
-import { getPhysicalName, getLogicalName } from '../../domain/entities/Table'
+import { DatabaseRepository } from '@/domain/repositories/DatabaseRepository'
+import { ExcelRepository } from '@/domain/repositories/ExcelRepository'
+import { validateDatabase } from '@/domain/services/DatabaseDefinitionService'
+import { ExportRequest, ExportResult } from '@/application/dto/ExportRequest'
+import { AppError } from '@/shared/errors/AppError'
+import { getPhysicalName, getLogicalName } from '@/domain/entities/Table'
 
 /**
  * データベース定義をExcelファイルにエクスポート

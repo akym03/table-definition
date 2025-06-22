@@ -1,11 +1,11 @@
-import { Name, createName, hasLogicalName, getDisplayName } from './Name'
+import { Name, createName, hasLogicalName, getDisplayName } from '@/domain/entities/Name'
 import {
   Column,
   getPhysicalName as getColumnPhysicalName,
   getLogicalName as getColumnLogicalName,
   hasForeignKey,
 } from './Column'
-import { ReferentialConstraint } from './ReferentialConstraint'
+import { ReferentialConstraint } from '@/domain/entities/ReferentialConstraint'
 
 /**
  * データベーステーブルを表現するエンティティ

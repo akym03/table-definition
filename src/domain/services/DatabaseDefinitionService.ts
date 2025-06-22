@@ -3,14 +3,14 @@ import {
   CircularReferenceResult,
   findCircularReferences,
   getTableByPhysicalName,
-} from '../entities/Database'
+} from '@/domain/entities/Database'
 import {
   Table,
   getPrimaryKeyColumns,
   getForeignKeyColumns,
   getTableDisplayName,
 } from '../entities/Table'
-import { getColumnDisplayName } from '../entities/Column'
+import { getColumnDisplayName } from '@/domain/entities/Column'
 
 /**
  * データベース定義の妥当性をチェック

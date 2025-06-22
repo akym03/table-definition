@@ -1,5 +1,5 @@
-import { DatabaseConnectionConfig, DatabaseType } from '../../shared/types/DatabaseType'
-import { ConfigError } from '../../shared/errors/AppError'
+import { DatabaseConnectionConfig, DatabaseType } from '@/shared/types/DatabaseType'
+import { ConfigError } from '@/shared/errors/AppError'
 
 /**
  * データベース設定を管理するクラス

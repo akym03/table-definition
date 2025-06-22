@@ -6,7 +6,7 @@ import {
   getReferencedTables,
   getReferentialConstraints,
 } from './Table'
-import { ReferentialConstraint } from './ReferentialConstraint'
+import { ReferentialConstraint } from '@/domain/entities/ReferentialConstraint'
 
 /**
  * データベースを表現するエンティティ

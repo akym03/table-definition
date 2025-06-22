@@ -1,10 +1,10 @@
-import { exportDatabaseDefinition } from '../../application/usecases/ExportDatabaseDefinitionUseCase'
-import { createDatabaseRepository } from '../../infrastructure/database/repositories/DatabaseRepositoryFactory'
-import { ExcelRepositoryImpl } from '../../infrastructure/excel/ExcelRepositoryImpl'
-import { DatabaseConfig } from '../../infrastructure/config/DatabaseConfig'
-import { AppConfig } from '../../infrastructure/config/AppConfig'
-import { ExportRequest } from '../../application/dto/ExportRequest'
-import { AppError } from '../../shared/errors/AppError'
+import { exportDatabaseDefinition } from '@/application/usecases/ExportDatabaseDefinitionUseCase'
+import { createDatabaseRepository } from '@/infrastructure/database/repositories/DatabaseRepositoryFactory'
+import { ExcelRepositoryImpl } from '@/infrastructure/excel/ExcelRepositoryImpl'
+import { DatabaseConfig } from '@/infrastructure/config/DatabaseConfig'
+import { AppConfig } from '@/infrastructure/config/AppConfig'
+import { ExportRequest } from '@/application/dto/ExportRequest'
+import { AppError } from '@/shared/errors/AppError'
 
 /**
  * データベース定義エクスポートを実行

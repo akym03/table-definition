@@ -1,5 +1,5 @@
-import { Name, createName, hasLogicalName, getDisplayName } from './Name'
-import { ReferentialConstraint } from './ReferentialConstraint'
+import { Name, createName, hasLogicalName, getDisplayName } from '@/domain/entities/Name'
+import { ReferentialConstraint } from '@/domain/entities/ReferentialConstraint'
 
 /**
  * データベースカラムを表現するエンティティ

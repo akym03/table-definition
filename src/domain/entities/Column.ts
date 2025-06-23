@@ -16,6 +16,7 @@ export interface Column {
   readonly isUnique: boolean
   readonly isAutoIncrement: boolean
   readonly foreignKeyConstraint: ReferentialConstraint | null
+  readonly enumValues: string[] | null
 }
 
 /**
@@ -33,7 +34,8 @@ export function createColumn(
   isPrimaryKey: boolean,
   isUnique: boolean,
   isAutoIncrement: boolean,
-  foreignKeyConstraint: ReferentialConstraint | null = null
+  foreignKeyConstraint: ReferentialConstraint | null = null,
+  enumValues: string[] | null = null
 ): Column {
   return {
     name: createName(physicalName, comment),
@@ -47,6 +49,7 @@ export function createColumn(
     isUnique,
     isAutoIncrement,
     foreignKeyConstraint,
+    enumValues,
   }
 }
 
@@ -83,6 +86,30 @@ export function getComment(column: Column): string {
  */
 export function hasForeignKey(column: Column): boolean {
   return column.foreignKeyConstraint !== null
+}
+
+/**
+ * ENUM型のカラムかどうかを判定
+ */
+export function isEnumColumn(column: Column): boolean {
+  return column.dataType === 'enum' && column.enumValues !== null
+}
+
+/**
+ * ENUM型の許容値を取得
+ */
+export function getEnumValues(column: Column): string[] {
+  if (!isEnumColumn(column)) {
+    return []
+  }
+  return column.enumValues || []
+}
+
+/**
+ * ENUM型の許容値数を取得
+ */
+export function getEnumValueCount(column: Column): number {
+  return getEnumValues(column).length
 }
 
 /**

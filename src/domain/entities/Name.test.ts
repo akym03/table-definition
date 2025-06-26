@@ -9,35 +9,35 @@ import {
 
 describe('Name', () => {
   describe('createName', () => {
-    it('should create a Name with only physical name', () => {
+    it('物理名のみでNameを作成すると論理名は物理名と同じ', () => {
       const name = createName('test_table')
       expect(name.physicalName).toBe('test_table')
       expect(name.logicalName).toBe('test_table')
       expect(name.comment).toBe('')
     })
 
-    it('should create a Name with logical name from comment', () => {
+    it('コメントから論理名を持つNameを作成すること', () => {
       const name = createName('test_table', 'テストテーブル')
       expect(name.physicalName).toBe('test_table')
       expect(name.logicalName).toBe('テストテーブル')
       expect(name.comment).toBe('')
     })
 
-    it('should create a Name with logical name and comment', () => {
-      const name = createName('test_table', 'テストテーブル これはテストです')
+    it('論理名とコメントを持つNameを作成すること', () => {
+      const name = createName('test_table', 'テストテーブル これは テスト です')
       expect(name.physicalName).toBe('test_table')
       expect(name.logicalName).toBe('テストテーブル')
-      expect(name.comment).toBe('これはテストです')
+      expect(name.comment).toBe('これは テスト です')
     })
 
-    it('should handle empty comment', () => {
+    it('空のコメントなら論理名が物理名と同じ', () => {
       const name = createName('test_table', '')
       expect(name.physicalName).toBe('test_table')
       expect(name.logicalName).toBe('test_table')
       expect(name.comment).toBe('')
     })
 
-    it('should handle null comment', () => {
+    it('nullのコメントなら論理名が物理名と同', () => {
       const name = createName('test_table', null)
       expect(name.physicalName).toBe('test_table')
       expect(name.logicalName).toBe('test_table')
@@ -46,58 +46,58 @@ describe('Name', () => {
   })
 
   describe('hasLogicalName', () => {
-    it('should return false when logical name is same as physical name', () => {
+    it('論理名が物理名と同じ場合にfalseを返すこと', () => {
       const name = createName('test_table')
       expect(hasLogicalName(name)).toBe(false)
     })
 
-    it('should return true when logical name is different from physical name', () => {
+    it('論理名が物理名と異なる場合にtrueを返すこと', () => {
       const name = createName('test_table', 'テストテーブル')
       expect(hasLogicalName(name)).toBe(true)
     })
   })
 
   describe('hasComment', () => {
-    it('should return false when comment is empty', () => {
+    it('コメントが空の場合にfalseを返すこと', () => {
       const name = createName('test_table')
       expect(hasComment(name)).toBe(false)
     })
 
-    it('should return true when comment exists', () => {
+    it('コメントが存在する場合にtrueを返すこと', () => {
       const name = createName('test_table', 'テストテーブル これはコメントです')
       expect(hasComment(name)).toBe(true)
     })
   })
 
   describe('getDisplayName', () => {
-    it('should return physical name when no logical name', () => {
+    it('論理名がない場合に物理名を返すこと', () => {
       const name = createName('test_table')
       expect(getDisplayName(name)).toBe('test_table')
     })
 
-    it('should return logical name when available', () => {
+    it('論理名が利用可能な場合に論理名を返すこと', () => {
       const name = createName('test_table', 'テストテーブル')
       expect(getDisplayName(name)).toBe('テストテーブル')
     })
   })
 
   describe('nameToString', () => {
-    it('should return physical name only', () => {
+    it('物理名のみを返すこと', () => {
       const name = createName('test_table')
       expect(nameToString(name)).toBe('test_table')
     })
 
-    it('should return logical name with physical name', () => {
+    it('物理名と共に論理名を返すこと', () => {
       const name = createName('test_table', 'テストテーブル')
       expect(nameToString(name)).toBe('テストテーブル (test_table)')
     })
 
-    it('should return physical name with comment', () => {
+    it('コメントと共に物理名を返すこと', () => {
       const name = createName('test_table', ' これはコメントです')
       expect(nameToString(name)).toBe('これはコメントです (test_table)')
     })
 
-    it('should return full format with logical name and comment', () => {
+    it('論理名とコメントを含む完全な形式を返すこと', () => {
       const name = createName('test_table', 'テストテーブル これはコメントです')
       expect(nameToString(name)).toBe('テストテーブル (test_table) - これはコメントです')
     })

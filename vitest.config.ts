@@ -30,6 +30,15 @@ export default defineConfig({
     typecheck: {
       enabled: true,
     },
+    // デバッグ時の設定
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
+    // テストタイムアウトを延長（デバッグ中のブレークポイント停止を考慮）
+    testTimeout: 60000,
   },
   resolve: {
     alias: {

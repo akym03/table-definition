@@ -19,7 +19,9 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:debug": "node --inspect-brk ./node_modules/.bin/vitest run",
+    "test:debug-watch": "node --inspect-brk ./node_modules/.bin/vitest"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,105 @@
+name: Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start MySQL with Docker Compose
+        run: |
+          echo "Starting MySQL container with Docker Compose..."
+          docker compose up -d mysql
+
+          echo "Checking container status..."
+          docker compose ps
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client netcat-openbsd
+
+      - name: Wait for MySQL to be ready
+        run: |
+          echo "Checking MySQL service status..."
+          docker compose ps mysql
+
+          echo "Checking MySQL logs..."
+          docker compose logs mysql
+
+          echo "Waiting for MySQL to be ready..."
+          for i in {1..60}; do
+            # まず基本的な接続テスト
+            if nc -z localhost 3306; then
+              echo "Port 3306 is open"
+
+              # 次にMySQLの準備完了をチェック
+              if mysqladmin ping -h 127.0.0.1 -P 3306 -u root --password=rootpassword --silent 2>/dev/null; then
+                echo "MySQL is ready and responding to ping"
+
+                # 最後にデータベースへの接続テスト
+                if mysql -h 127.0.0.1 -P 3306 -u root --password=rootpassword -e "SELECT 1;" test_database 2>/dev/null; then
+                  echo "Successfully connected to MySQL database"
+                  exit 0
+                fi
+              fi
+            else
+              echo "Port 3306 is not yet open"
+            fi
+
+            echo "Waiting for MySQL... ($i/60)"
+            sleep 2
+          done
+
+          echo "ERROR: MySQL failed to become ready within 120 seconds"
+          echo "Final MySQL logs:"
+          docker compose logs mysql
+          exit 1
+
+      - name: Verify database initialization
+        run: |
+          echo "Verifying database and tables..."
+          mysql -h 127.0.0.1 -P 3306 -u root --password=rootpassword test_database -e "SHOW TABLES;"
+
+      - name: Type check
+        run: pnpm run type-check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Run tests
+        run: pnpm run test:run
+        env:
+          CI: true
+
+      - name: Generate coverage report
+        run: pnpm run test:coverage
+        env:
+          CI: true
+
+      - name: Stop MySQL container
+        if: always()
+        run: |
+          echo "Stopping MySQL container..."
+          docker compose down

@@ -12,14 +12,25 @@ export interface Name {
  */
 export function createName(physicalName: string, comment: string | null = null): Name {
   if (comment && comment.trim().length > 0) {
-    const parts = comment.trim().split(/\s+/, 2)
-    const logicalName = parts[0] || physicalName
-    const finalComment = parts.length > 1 ? parts.slice(1).join(' ') : ''
+    const trimmedComment = comment.trim()
+    const firstSpaceIndex = trimmedComment.search(/\s/)
 
-    return {
-      physicalName,
-      logicalName,
-      comment: finalComment,
+    if (firstSpaceIndex > 0) {
+      const logicalName = trimmedComment.substring(0, firstSpaceIndex)
+      const finalComment = trimmedComment.substring(firstSpaceIndex).trim()
+
+      return {
+        physicalName,
+        logicalName,
+        comment: finalComment,
+      }
+    } else {
+      // 空白文字がない場合、全体を論理名として扱う
+      return {
+        physicalName,
+        logicalName: trimmedComment,
+        comment: '',
+      }
     }
   }
 

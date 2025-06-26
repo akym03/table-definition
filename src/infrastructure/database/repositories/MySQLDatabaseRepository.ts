@@ -42,6 +42,7 @@ interface ColumnQueryResult extends mysql.RowDataPacket {
   column_key: ColumnKeyType
   extra: string
   column_comment: string | null
+  column_type: string
 }
 
 interface ReferentialConstraintQueryResult extends mysql.RowDataPacket {
@@ -238,7 +239,8 @@ async function retrieveColumns(state: MySQLConnection, tableName: string): Promi
       NUMERIC_SCALE as numeric_scale,
       COLUMN_KEY as column_key,
       EXTRA as extra,
-      COLUMN_COMMENT as column_comment
+      COLUMN_COMMENT as column_comment,
+      COLUMN_TYPE as column_type
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
     ORDER BY ORDINAL_POSITION
@@ -247,6 +249,8 @@ async function retrieveColumns(state: MySQLConnection, tableName: string): Promi
   )
 
   return columnRows.map((row) => {
+    const enumValues = extractEnumValues(row.column_type)
+
     return createColumn(
       row.column_name,
       row.column_comment,
@@ -258,7 +262,9 @@ async function retrieveColumns(state: MySQLConnection, tableName: string): Promi
       row.numeric_scale,
       row.column_key === 'PRI',
       row.column_key === 'UNI',
-      row.extra.includes('auto_increment')
+      row.extra.includes('auto_increment'),
+      null, // foreignKeyConstraint
+      enumValues
     )
   })
 }
@@ -320,11 +326,36 @@ function mapConstraintAction(action: string): ConstraintAction {
       return ConstraintAction.RESTRICT
     case 'SET NULL':
       return ConstraintAction.SET_NULL
-    case 'SET DEFAULT':
-      return ConstraintAction.SET_DEFAULT
     case 'NO ACTION':
       return ConstraintAction.NO_ACTION
+    case 'SET DEFAULT':
+      return ConstraintAction.SET_DEFAULT
     default:
       return ConstraintAction.RESTRICT
   }
+}
+
+/**
+ * ENUM型のcolumn_typeから許容値を抽出
+ * 例: "enum('pending','confirmed','shipped')" → ['pending', 'confirmed', 'shipped']
+ */
+function extractEnumValues(columnType: string): string[] | null {
+  if (!columnType.toLowerCase().startsWith('enum(')) {
+    return null
+  }
+
+  // enum('value1','value2','value3') の形式から値を抽出
+  const match = columnType.match(/enum\((.+)\)/i)
+  if (!match) {
+    return null
+  }
+
+  // 内部の値をカンマで分割し、シングルクォートを除去
+  const valuesString = match[1]
+  const values = valuesString
+    .split(',')
+    .map((value) => value.trim().replace(/^'|'$/g, ''))
+    .filter((value) => value.length > 0)
+
+  return values.length > 0 ? values : null
 }

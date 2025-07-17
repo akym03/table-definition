@@ -35,10 +35,22 @@ jobs:
           echo "Checking container status..."
           docker compose ps
 
+      - name: Start PostgreSQL with Docker Compose
+        run: |
+          echo "Starting PostgreSQL container with Docker Compose..."
+          docker compose up -d postgresql
+
+          echo "Checking container status..."
+          docker compose ps
+
       - name: Install MySQL client
         run: |
           sudo apt-get update
           sudo apt-get install -y mysql-client netcat-openbsd
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get install -y postgresql-client
 
       - name: Wait for MySQL to be ready
         run: |
@@ -77,10 +89,56 @@ jobs:
           docker compose logs mysql
           exit 1
 
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          echo "Checking PostgreSQL service status..."
+          docker compose ps postgresql
+
+          echo "Checking PostgreSQL logs..."
+          docker compose logs postgresql
+
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in {1..60}; do
+            # まず基本的な接続テスト
+            if nc -z localhost 5432; then
+              echo "Port 5432 is open"
+
+              # 次にPostgreSQLの準備完了をチェック
+              if pg_isready -h 127.0.0.1 -p 5432 -U testuser -d test_database 2>/dev/null; then
+                echo "PostgreSQL is ready and responding to pg_isready"
+
+                # 最後にデータベースへの接続テスト
+                if psql -h 127.0.0.1 -p 5432 -U testuser -d test_database -c "SELECT 1;" 2>/dev/null; then
+                  echo "Successfully connected to PostgreSQL database"
+                  exit 0
+                fi
+              fi
+            else
+              echo "Port 5432 is not yet open"
+            fi
+
+            echo "Waiting for PostgreSQL... ($i/60)"
+            sleep 2
+          done
+
+          echo "ERROR: PostgreSQL failed to become ready within 120 seconds"
+          echo "Final PostgreSQL logs:"
+          docker compose logs postgresql
+          exit 1
+        env:
+          PGPASSWORD: testpassword
+
       - name: Verify database initialization
         run: |
           echo "Verifying database and tables..."
           mysql -h 127.0.0.1 -P 3306 -u root --password=rootpassword test_database -e "SHOW TABLES;"
+
+      - name: Verify PostgreSQL database initialization
+        run: |
+          echo "Verifying PostgreSQL database and tables..."
+          psql -h 127.0.0.1 -p 5432 -U testuser -d test_database -c "\dt"
+        env:
+          PGPASSWORD: testpassword
 
       - name: Type check
         run: pnpm run type-check
@@ -98,8 +156,8 @@ jobs:
         env:
           CI: true
 
-      - name: Stop MySQL container
+      - name: Stop database containers
         if: always()
         run: |
-          echo "Stopping MySQL container..."
+          echo "Stopping database containers..."
           docker compose down

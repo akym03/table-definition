@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createMySQLDatabaseRepository } from './MySQLDatabaseRepository'
+import { PostgreSQLDatabaseRepository } from './PostgreSQLDatabaseRepository'
 import { DatabaseConnectionConfig, DatabaseType } from '@/shared/types/DatabaseType'
 import { ConstraintAction } from '@/domain/entities/ReferentialConstraint'
 import {
@@ -16,20 +16,20 @@ import {
   getEnumValueCount,
 } from '@/domain/entities/Column'
 
-describe('MySQLDatabaseRepository 統合テスト', () => {
+describe('PostgreSQLDatabaseRepository 統合テスト', () => {
   const testConfig: DatabaseConnectionConfig = {
-    type: DatabaseType.MYSQL,
+    type: DatabaseType.POSTGRESQL,
     host: 'localhost',
-    port: 3306,
+    port: 5432,
     username: 'testuser',
     password: 'testpassword',
     database: 'test_database',
   }
 
-  let repository: ReturnType<typeof createMySQLDatabaseRepository>
+  let repository: PostgreSQLDatabaseRepository
 
   beforeAll(() => {
-    repository = createMySQLDatabaseRepository(testConfig)
+    repository = new PostgreSQLDatabaseRepository(testConfig)
   })
 
   afterAll(async () => {
@@ -43,7 +43,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
     })
 
     it('不正な接続設定でテスト接続が失敗する', async () => {
-      const invalidRepository = createMySQLDatabaseRepository({
+      const invalidRepository = new PostgreSQLDatabaseRepository({
         ...testConfig,
         password: 'invalid_password',
       })
@@ -60,7 +60,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       const database = await repository.retrieveTableDefinitions()
 
       expect(database.name).toBe('test_database')
-      expect(database.version).toMatch(/^\d+\.\d+\.\d+/)
+      expect(database.version).toContain('PostgreSQL')
       expect(database.charset).toBeDefined()
       expect(database.collation).toBeDefined()
       expect(database.tables).toBeDefined()
@@ -102,7 +102,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(customersTable).toBeDefined()
-      expect(customersTable!.schema).toBe('test_database')
+      expect(customersTable!.schema).toBe('public')
       expect(customersTable!.columns.length).toBeGreaterThan(0)
     })
 
@@ -128,7 +128,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(employeesTable).toBeDefined()
-      expect(employeesTable!.schema).toBe('test_database')
+      expect(employeesTable!.schema).toBe('public')
       expect(getTablePhysicalName(employeesTable!)).toBe('employees')
       expect(getTableLogicalName(employeesTable!)).toBe('従業員マスタ')
       expect(getTableComment(employeesTable!)).toBe('（自己参照外部キーテスト用）')
@@ -142,7 +142,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(departmentsTable).toBeDefined()
-      expect(departmentsTable!.schema).toBe('test_database')
+      expect(departmentsTable!.schema).toBe('public')
       expect(getTablePhysicalName(departmentsTable!)).toBe('departments')
       expect(getTableLogicalName(departmentsTable!)).toBe('部門マスタ')
       expect(getTableComment(departmentsTable!)).toBe('（SET DEFAULT ON UPDATEテスト用）')
@@ -156,7 +156,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(projectsTable).toBeDefined()
-      expect(projectsTable!.schema).toBe('test_database')
+      expect(projectsTable!.schema).toBe('public')
       expect(getTablePhysicalName(projectsTable!)).toBe('projects')
       expect(getTableLogicalName(projectsTable!)).toBe('プロジェクトマスタ')
       expect(getTableComment(projectsTable!)).toBe('（複雑な参照整合性連鎖テスト用）')
@@ -170,7 +170,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(projectMembersTable).toBeDefined()
-      expect(projectMembersTable!.schema).toBe('test_database')
+      expect(projectMembersTable!.schema).toBe('public')
       expect(getTablePhysicalName(projectMembersTable!)).toBe('project_members')
       expect(getTableLogicalName(projectMembersTable!)).toBe('プロジェクトメンバーテーブル')
       expect(getTableComment(projectMembersTable!)).toBe('（多対多関係、複雑な制約テスト用）')
@@ -184,7 +184,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(expensesTable).toBeDefined()
-      expect(expensesTable!.schema).toBe('test_database')
+      expect(expensesTable!.schema).toBe('public')
       expect(getTablePhysicalName(expensesTable!)).toBe('expenses')
       expect(getTableLogicalName(expensesTable!)).toBe('経費テーブル')
       expect(getTableComment(expensesTable!)).toBe(
@@ -200,7 +200,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       )
 
       expect(auditLogsTable).toBeDefined()
-      expect(auditLogsTable!.schema).toBe('test_database')
+      expect(auditLogsTable!.schema).toBe('public')
       expect(getTablePhysicalName(auditLogsTable!)).toBe('audit_logs')
       expect(getTableLogicalName(auditLogsTable!)).toBe('監査ログテーブル')
       expect(getTableComment(auditLogsTable!)).toBe('（参照整合性制約なしの履歴テーブル）')
@@ -209,7 +209,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
   })
 
   describe('カラム情報取得', () => {
-    it('INT型・主キー・自動増分カラムの全プロパティが正しく取得できる', async () => {
+    it('SERIAL型・主キー・自動増分カラムの全プロパティが正しく取得できる', async () => {
       const database = await repository.retrieveTableDefinitions()
       const customersTable = database.tables.find(
         (table) => getTablePhysicalName(table) === 'customers'
@@ -221,14 +221,14 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(idColumn)).toBe('id')
       expect(getColumnByLogicalName(idColumn)).toBe('顧客ID')
       expect(getColumnComment(idColumn)).toBe('')
-      expect(idColumn.dataType).toBe('int')
+      expect(idColumn.dataType).toBe('integer')
       expect(idColumn.isNullable).toBe(false)
-      expect(idColumn.defaultValue).toBe(null)
+      expect(idColumn.defaultValue).toBe("nextval('customers_id_seq'::regclass)")
       expect(idColumn.maxLength).toBe(null)
-      expect(idColumn.precision).toBe(10) // INTの精度
-      expect(idColumn.scale).toBe(0) // INTのスケール
+      expect(idColumn.precision).toBe(32)
+      expect(idColumn.scale).toBe(0)
       expect(idColumn.isPrimaryKey).toBe(true)
-      expect(idColumn.isUnique).toBe(false) // 主キーなのでUNIQUE制約は別扱い
+      expect(idColumn.isUnique).toBe(false)
       expect(idColumn.isAutoIncrement).toBe(true)
       expect(idColumn.foreignKeyConstraint).toBe(null)
     })
@@ -247,7 +247,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(emailColumn)).toBe('email')
       expect(getColumnByLogicalName(emailColumn)).toBe('メールアドレス')
       expect(getColumnComment(emailColumn)).toBe('')
-      expect(emailColumn.dataType).toBe('varchar')
+      expect(emailColumn.dataType).toBe('character varying')
       expect(emailColumn.isNullable).toBe(false)
       expect(emailColumn.defaultValue).toBe(null)
       expect(emailColumn.maxLength).toBe(255)
@@ -259,7 +259,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(emailColumn.foreignKeyConstraint).toBe(null)
     })
 
-    it('DECIMAL型カラムの全プロパティが正しく取得できる', async () => {
+    it('NUMERIC型カラムの全プロパティが正しく取得できる', async () => {
       const database = await repository.retrieveTableDefinitions()
       const productsTable = database.tables.find(
         (table) => getTablePhysicalName(table) === 'products'
@@ -273,7 +273,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(priceColumn)).toBe('price')
       expect(getColumnByLogicalName(priceColumn)).toBe('価格')
       expect(getColumnComment(priceColumn)).toBe('')
-      expect(priceColumn.dataType).toBe('decimal')
+      expect(priceColumn.dataType).toBe('numeric')
       expect(priceColumn.isNullable).toBe(false)
       expect(priceColumn.defaultValue).toBe(null)
       expect(priceColumn.maxLength).toBe(null)
@@ -299,11 +299,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(stockColumn)).toBe('stock_quantity')
       expect(getColumnByLogicalName(stockColumn)).toBe('在庫数')
       expect(getColumnComment(stockColumn)).toBe('')
-      expect(stockColumn.dataType).toBe('int')
+      expect(stockColumn.dataType).toBe('integer')
       expect(stockColumn.isNullable).toBe(true)
       expect(stockColumn.defaultValue).toBe('0')
       expect(stockColumn.maxLength).toBe(null)
-      expect(stockColumn.precision).toBe(10)
+      expect(stockColumn.precision).toBe(32)
       expect(stockColumn.scale).toBe(0)
       expect(stockColumn.isPrimaryKey).toBe(false)
       expect(stockColumn.isUnique).toBe(false)
@@ -311,7 +311,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(stockColumn.foreignKeyConstraint).toBe(null)
     })
 
-    it('BOOLEAN型（TINYINT）・デフォルト値ありカラムの全プロパティが正しく取得できる', async () => {
+    it('BOOLEAN型カラムの全プロパティが正しく取得できる', async () => {
       const database = await repository.retrieveTableDefinitions()
       const productsTable = database.tables.find(
         (table) => getTablePhysicalName(table) === 'products'
@@ -325,12 +325,12 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(isActiveColumn)).toBe('is_active')
       expect(getColumnByLogicalName(isActiveColumn)).toBe('有効フラグ')
       expect(getColumnComment(isActiveColumn)).toBe('')
-      expect(isActiveColumn.dataType).toBe('tinyint')
+      expect(isActiveColumn.dataType).toBe('boolean')
       expect(isActiveColumn.isNullable).toBe(true)
-      expect(isActiveColumn.defaultValue).toBe('1')
+      expect(isActiveColumn.defaultValue).toBe('true')
       expect(isActiveColumn.maxLength).toBe(null)
-      expect(isActiveColumn.precision).toBe(3)
-      expect(isActiveColumn.scale).toBe(0)
+      expect(isActiveColumn.precision).toBe(null)
+      expect(isActiveColumn.scale).toBe(null)
       expect(isActiveColumn.isPrimaryKey).toBe(false)
       expect(isActiveColumn.isUnique).toBe(false)
       expect(isActiveColumn.isAutoIncrement).toBe(false)
@@ -351,7 +351,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(updatedAtColumn)).toBe('updated_at')
       expect(getColumnByLogicalName(updatedAtColumn)).toBe('更新日時')
       expect(getColumnComment(updatedAtColumn)).toBe('')
-      expect(updatedAtColumn.dataType).toBe('timestamp')
+      expect(updatedAtColumn.dataType).toBe('timestamp without time zone') // TODO with timezone 変更する
       expect(updatedAtColumn.isNullable).toBe(true)
       expect(updatedAtColumn.defaultValue).toBe('CURRENT_TIMESTAMP')
       expect(updatedAtColumn.maxLength).toBe(null)
@@ -377,11 +377,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(categoryIdColumn)).toBe('category_id')
       expect(getColumnByLogicalName(categoryIdColumn)).toBe('カテゴリID')
       expect(getColumnComment(categoryIdColumn)).toBe('')
-      expect(categoryIdColumn.dataType).toBe('int')
+      expect(categoryIdColumn.dataType).toBe('integer')
       expect(categoryIdColumn.isNullable).toBe(true)
       expect(categoryIdColumn.defaultValue).toBe(null)
       expect(categoryIdColumn.maxLength).toBe(null)
-      expect(categoryIdColumn.precision).toBe(10)
+      expect(categoryIdColumn.precision).toBe(32)
       expect(categoryIdColumn.scale).toBe(0)
       expect(categoryIdColumn.isPrimaryKey).toBe(false)
       expect(categoryIdColumn.isUnique).toBe(false)
@@ -479,11 +479,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
         expect(getColumnPhysicalName(projectIdColumn)).toBe('project_id')
         expect(getColumnByLogicalName(projectIdColumn)).toBe('プロジェクトID')
         expect(getColumnComment(projectIdColumn)).toBe('')
-        expect(projectIdColumn.dataType).toBe('int')
+        expect(projectIdColumn.dataType).toBe('integer')
         expect(projectIdColumn.isNullable).toBe(false)
         expect(projectIdColumn.defaultValue).toBe(null)
         expect(projectIdColumn.maxLength).toBe(null)
-        expect(projectIdColumn.precision).toBe(10)
+        expect(projectIdColumn.precision).toBe(32)
         expect(projectIdColumn.scale).toBe(0)
         expect(projectIdColumn.isPrimaryKey).toBe(true) // 複合主キーの一部
         expect(projectIdColumn.isUnique).toBe(false)
@@ -504,11 +504,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
         expect(getColumnPhysicalName(employeeIdColumn)).toBe('employee_id')
         expect(getColumnByLogicalName(employeeIdColumn)).toBe('従業員ID')
         expect(getColumnComment(employeeIdColumn)).toBe('')
-        expect(employeeIdColumn.dataType).toBe('int')
+        expect(employeeIdColumn.dataType).toBe('integer')
         expect(employeeIdColumn.isNullable).toBe(false)
         expect(employeeIdColumn.defaultValue).toBe(null)
         expect(employeeIdColumn.maxLength).toBe(null)
-        expect(employeeIdColumn.precision).toBe(10)
+        expect(employeeIdColumn.precision).toBe(32)
         expect(employeeIdColumn.scale).toBe(0)
         expect(employeeIdColumn.isPrimaryKey).toBe(true) // 複合主キーの一部
         expect(employeeIdColumn.isUnique).toBe(false)
@@ -543,7 +543,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(oldValuesColumn)).toBe('old_values')
       expect(getColumnByLogicalName(oldValuesColumn)).toBe('変更前の値')
       expect(getColumnComment(oldValuesColumn)).toBe('')
-      expect(oldValuesColumn.dataType).toBe('json')
+      expect(oldValuesColumn.dataType).toBe('jsonb')
       expect(oldValuesColumn.isNullable).toBe(true)
       expect(oldValuesColumn.defaultValue).toBe(null)
       expect(oldValuesColumn.maxLength).toBe(null)
@@ -569,7 +569,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(nameColumn)).toBe('name')
       expect(getColumnByLogicalName(nameColumn)).toBe('顧客名')
       expect(getColumnComment(nameColumn)).toBe('')
-      expect(nameColumn.dataType).toBe('varchar')
+      expect(nameColumn.dataType).toBe('character varying')
       expect(nameColumn.isNullable).toBe(false)
       expect(nameColumn.defaultValue).toBe(null)
       expect(nameColumn.maxLength).toBe(100)
@@ -594,11 +594,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(managerIdColumn)).toBe('manager_id')
       expect(getColumnByLogicalName(managerIdColumn)).toBe('上司ID')
       expect(getColumnComment(managerIdColumn)).toBe('')
-      expect(managerIdColumn.dataType).toBe('int')
+      expect(managerIdColumn.dataType).toBe('integer')
       expect(managerIdColumn.isNullable).toBe(true)
       expect(managerIdColumn.defaultValue).toBe(null)
       expect(managerIdColumn.maxLength).toBe(null)
-      expect(managerIdColumn.precision).toBe(10)
+      expect(managerIdColumn.precision).toBe(32)
       expect(managerIdColumn.scale).toBe(0)
       expect(managerIdColumn.isPrimaryKey).toBe(false)
       expect(managerIdColumn.isUnique).toBe(false)
@@ -619,11 +619,11 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
       expect(getColumnPhysicalName(parentIdColumn)).toBe('parent_department_id')
       expect(getColumnByLogicalName(parentIdColumn)).toBe('親部門ID')
       expect(getColumnComment(parentIdColumn)).toBe('')
-      expect(parentIdColumn.dataType).toBe('int')
+      expect(parentIdColumn.dataType).toBe('integer')
       expect(parentIdColumn.isNullable).toBe(true)
       expect(parentIdColumn.defaultValue).toBe('1')
       expect(parentIdColumn.maxLength).toBe(null)
-      expect(parentIdColumn.precision).toBe(10)
+      expect(parentIdColumn.precision).toBe(32)
       expect(parentIdColumn.scale).toBe(0)
       expect(parentIdColumn.isPrimaryKey).toBe(false)
       expect(parentIdColumn.isUnique).toBe(false)
@@ -944,7 +944,7 @@ describe('MySQLDatabaseRepository 統合テスト', () => {
 
   describe('エラーハンドリング', () => {
     it('存在しないデータベースへの接続はエラーになる', async () => {
-      const invalidRepository = createMySQLDatabaseRepository({
+      const invalidRepository = new PostgreSQLDatabaseRepository({
         ...testConfig,
         database: 'nonexistent_database',
       })

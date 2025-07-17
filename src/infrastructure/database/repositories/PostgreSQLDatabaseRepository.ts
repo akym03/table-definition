@@ -10,11 +10,7 @@ import {
 import { DatabaseConnectionConfig } from '@/shared/types/DatabaseType'
 import { DatabaseError } from '@/shared/errors/AppError'
 import { Client } from 'pg'
-import {
-  DatabaseInfo,
-  ConstraintRuleType,
-  isValidVersionResult,
-} from '@/infrastructure/database/types/QueryTypes'
+import { DatabaseInfo, isValidVersionResult } from '@/infrastructure/database/types/QueryTypes'
 
 // PostgreSQL固有のクエリ結果型定義
 interface VersionQueryResult {
@@ -38,6 +34,8 @@ interface ColumnQueryResult {
   character_maximum_length: number | null
   numeric_precision: number | null
   numeric_scale: number | null
+  enum_type: string | null
+  enum_values: string | null
 }
 
 interface PrimaryKeyQueryResult {
@@ -59,8 +57,8 @@ interface ReferentialConstraintQueryResult {
   column_name: string
   foreign_table_name: string
   foreign_column_name: string
-  delete_rule: ConstraintRuleType
-  update_rule: ConstraintRuleType
+  delete_rule: string
+  update_rule: string
 }
 
 /**
@@ -177,7 +175,7 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
 
     for (const row of result.rows) {
       const columns = await this.retrieveColumns(row.table_name)
-      const constraints = await this.retrieveReferentialConstraints()
+      const constraints = await this.retrieveReferentialConstraints(row.table_name)
       const tableComment = await this.retrieveTableComment(row.table_name)
 
       const table = createTable(
@@ -204,17 +202,41 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
 
     const result = await this.client.query<ColumnQueryResult>(
       `
+      with
+        enums as (
+          SELECT
+            n.nspname as schema_name,
+            t.typname AS enum_type,
+            array_to_string (array_agg (e.enumlabel ORDER BY e.enumsortorder), ',') AS enum_values
+          FROM
+            pg_type t
+            JOIN pg_enum e ON t.oid = e.enumtypid
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+          GROUP BY
+            n.nspname,
+            t.typname
+          ORDER BY
+            n.nspname,
+            t.typname
+        )
       SELECT
-        column_name,
-        data_type,
-        is_nullable,
-        column_default,
-        character_maximum_length,
-        numeric_precision,
-        numeric_scale
-      FROM information_schema.columns
-      WHERE table_name = $1
-      ORDER BY ordinal_position
+        c.column_name,
+        c.data_type,
+        c.is_nullable,
+        c.column_default,
+        c.character_maximum_length,
+        c.numeric_precision,
+        c.numeric_scale,
+        e.enum_type,
+        e.enum_values
+      FROM
+        information_schema.columns as c
+        LEFT OUTER JOIN enums e ON c.table_schema = e.schema_name
+        and c.udt_name = e.enum_type
+      WHERE
+        c.table_name = $1
+      ORDER BY
+        c.ordinal_position
     `,
       [tableName]
     )
@@ -231,11 +253,20 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
     const columnComments = await this.retrieveColumnComments(tableName)
     const commentMap = new Map(columnComments.map((cc) => [cc.column_name, cc.column_comment]))
 
+    const dataTypeConverter = (data_type: string, enum_type: string | null): string => {
+      if (enum_type !== null) {
+        return 'enum'
+      }
+      return data_type
+    }
+
+    const DEFAULT_FOREIGN_KEY_CONSTRAINT = null
+
     return result.rows.map((row) => {
       return createColumn(
         row.column_name,
         commentMap.get(row.column_name) || null,
-        row.data_type,
+        dataTypeConverter(row.data_type, row.enum_type),
         row.is_nullable === 'YES',
         row.column_default,
         row.character_maximum_length,
@@ -243,7 +274,9 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
         row.numeric_scale,
         primaryKeyColumns.has(row.column_name),
         uniqueColumns.has(row.column_name),
-        row.column_default?.includes('nextval') || false
+        row.column_default?.includes('nextval') || false,
+        DEFAULT_FOREIGN_KEY_CONSTRAINT,
+        extractEnumValues(row.enum_values)
       )
     })
   }
@@ -258,14 +291,16 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
 
     const result = await this.client.query<PrimaryKeyQueryResult>(
       `
-      SELECT kcu.column_name
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-      WHERE tc.constraint_type = 'PRIMARY KEY'
-        AND tc.table_name = $1
-      ORDER BY kcu.ordinal_position
+      SELECT a.attname as column_name
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      JOIN pg_attribute a ON a.attrelid = con.conrelid
+        AND a.attnum = ANY(con.conkey)
+      WHERE con.contype = 'p'
+        AND rel.relname = $1
+        AND nsp.nspname = 'public'
+      ORDER BY array_position(con.conkey, a.attnum)
     `,
       [tableName]
     )
@@ -285,14 +320,16 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
 
     const result = await this.client.query<UniqueConstraintQueryResult>(
       `
-      SELECT kcu.column_name
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-      WHERE tc.constraint_type = 'UNIQUE'
-        AND tc.table_name = $1
-      ORDER BY kcu.ordinal_position
+      SELECT a.attname as column_name
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      JOIN pg_attribute a ON a.attrelid = con.conrelid
+        AND a.attnum = ANY(con.conkey)
+      WHERE con.contype = 'u'
+        AND rel.relname = $1
+        AND nsp.nspname = 'public'
+      ORDER BY array_position(con.conkey, a.attnum)
     `,
       [tableName]
     )
@@ -303,33 +340,38 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
   /**
    * 参照整合性制約を取得
    */
-  private async retrieveReferentialConstraints(): Promise<ReferentialConstraint[]> {
+  private async retrieveReferentialConstraints(
+    tableName: string
+  ): Promise<ReferentialConstraint[]> {
     if (!this.client) {
       throw new Error('データベース接続が確立されていません')
     }
 
-    const result = await this.client.query<ReferentialConstraintQueryResult>(`
+    const result = await this.client.query<ReferentialConstraintQueryResult>(
+      `
       SELECT
-        tc.constraint_name,
-        tc.table_name as source_table,
-        kcu.column_name,
-        ccu.table_name AS foreign_table_name,
-        ccu.column_name AS foreign_column_name,
-        rc.delete_rule,
-        rc.update_rule
-      FROM information_schema.table_constraints AS tc
-      JOIN information_schema.key_column_usage AS kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-      JOIN information_schema.constraint_column_usage AS ccu
-        ON ccu.constraint_name = tc.constraint_name
-        AND ccu.table_schema = tc.table_schema
-      JOIN information_schema.referential_constraints AS rc
-        ON tc.constraint_name = rc.constraint_name
-        AND tc.table_schema = rc.constraint_schema
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-      ORDER BY tc.constraint_name
-    `)
+        con.conname as constraint_name,
+        src_rel.relname as source_table,
+        src_att.attname as column_name,
+        foreign_rel.relname AS foreign_table_name,
+        foreign_att.attname AS foreign_column_name,
+        con.confdeltype as delete_rule,
+        con.confupdtype as update_rule
+      FROM pg_constraint con
+      JOIN pg_class src_rel ON src_rel.oid = con.conrelid
+      JOIN pg_namespace src_nsp ON src_nsp.oid = src_rel.relnamespace
+      JOIN pg_attribute src_att ON src_att.attrelid = con.conrelid
+        AND src_att.attnum = ANY(con.conkey)
+      JOIN pg_class foreign_rel ON foreign_rel.oid = con.confrelid
+      JOIN pg_attribute foreign_att ON foreign_att.attrelid = con.confrelid
+        AND foreign_att.attnum = con.confkey[array_position(con.conkey, src_att.attnum)]
+      WHERE con.contype = 'f'
+        AND src_rel.relname = $1
+        AND src_nsp.nspname = 'public'
+      ORDER BY con.conname
+    `,
+      [tableName]
+    )
 
     return result.rows.map((row) =>
       createReferentialConstraint(
@@ -338,27 +380,27 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
         row.column_name,
         row.foreign_table_name,
         row.foreign_column_name,
-        this.mapConstraintAction(row.delete_rule),
-        this.mapConstraintAction(row.update_rule),
+        this.mapConstraintActionChar(row.delete_rule),
+        this.mapConstraintActionChar(row.update_rule),
         true
       )
     )
   }
 
   /**
-   * PostgreSQLの制約アクションをマップ
+   * PostgreSQLのpg_constraintテーブルの制約アクション文字をマップ
    */
-  private mapConstraintAction(action: ConstraintRuleType): ConstraintAction {
-    switch (action) {
-      case 'CASCADE':
+  private mapConstraintActionChar(actionChar: string): ConstraintAction {
+    switch (actionChar) {
+      case 'c':
         return ConstraintAction.CASCADE
-      case 'RESTRICT':
+      case 'r':
         return ConstraintAction.RESTRICT
-      case 'SET NULL':
+      case 'n':
         return ConstraintAction.SET_NULL
-      case 'SET DEFAULT':
+      case 'd':
         return ConstraintAction.SET_DEFAULT
-      case 'NO ACTION':
+      case 'a':
       default:
         return ConstraintAction.NO_ACTION
     }
@@ -412,4 +454,24 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
 
     return result.rows
   }
+}
+
+/**
+ * Extracts an array of allowed values from a string representing ENUM values
+ *
+ * 例: "pending,confirmed,shipped" → ["pending", "confirmed", "shipped"]
+ *
+ * @param {string | null} enumValues - A comma-separated string of ENUM values, an empty string, or null.
+ * @returns {string[] | null} An array of ENUM values if the input is valid, or null if the input is null or an empty string.
+ *
+ * Note: Passing an empty string will result in a null return value.
+ *
+ */
+function extractEnumValues(enumValues: string | null): string[] | null {
+  if (enumValues === null) {
+    return null
+  }
+
+  const values = enumValues.split(',')
+  return values.length > 0 && values[0] !== '' ? values : null
 }

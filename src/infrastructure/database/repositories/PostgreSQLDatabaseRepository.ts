@@ -7,6 +7,7 @@ import {
   ConstraintAction,
   createReferentialConstraint,
 } from '@/domain/entities/ReferentialConstraint'
+import { DbIndex, createDbIndex } from '@/domain/entities/DbIndex'
 import { DatabaseConnectionConfig } from '@/shared/types/DatabaseType'
 import { DatabaseError } from '@/shared/errors/AppError'
 import { Client } from 'pg'
@@ -61,6 +62,15 @@ interface ReferentialConstraintQueryResult {
   update_rule: string
 }
 
+interface IndexQueryResult {
+  table_name: string
+  index_name: string
+  column_name: string
+  seq_in_index: number
+  is_unique: boolean
+  index_type: string
+}
+
 /**
  * PostgreSQL用データベースリポジトリ実装
  */
@@ -100,6 +110,75 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
       return true
     } catch {
       return false
+    }
+  }
+
+  /**
+   * インデックス情報を取得
+   */
+  async retrieveIndexes(tableName: string, schemaName?: string): Promise<DbIndex[]> {
+    try {
+      await this.connect()
+
+      if (!this.client) {
+        throw new Error('データベース接続が確立されていません')
+      }
+
+      const schema = schemaName || 'public'
+
+      const result = await this.client.query<IndexQueryResult>(
+        `
+        SELECT
+          t.relname as table_name,
+          i.relname as index_name,
+          a.attname as column_name,
+          a.attnum as seq_in_index,
+          ix.indisunique as is_unique,
+          am.amname as index_type
+        FROM pg_class t
+        JOIN pg_index ix ON t.oid = ix.indrelid
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_attribute a ON a.attrelid = t.oid
+        JOIN pg_am am ON i.relam = am.oid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE t.relname = $1
+          AND n.nspname = $2
+          AND a.attnum = ANY(ix.indkey)
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        ORDER BY i.relname, a.attnum
+      `,
+        [tableName, schema]
+      )
+
+      // インデックス名でグループ化
+      const indexMap = new Map<string, IndexQueryResult[]>()
+
+      for (const row of result.rows) {
+        if (!indexMap.has(row.index_name)) {
+          indexMap.set(row.index_name, [])
+        }
+        indexMap.get(row.index_name)!.push(row)
+      }
+
+      // DbIndexオブジェクトに変換
+      const indexes: DbIndex[] = []
+
+      for (const [indexName, indexColumns] of indexMap) {
+        // カラムをシーケンス順にソート
+        const sortedColumns = indexColumns.sort((a, b) => a.seq_in_index - b.seq_in_index)
+        const columns = sortedColumns.map((col) => col.column_name)
+        const isUnique = sortedColumns[0].is_unique
+        const indexType = sortedColumns[0].index_type || 'btree'
+
+        const dbIndex = createDbIndex(tableName, indexName, isUnique, columns, indexType)
+
+        indexes.push(dbIndex)
+      }
+
+      return indexes
+    } catch (error) {
+      throw new DatabaseError(`インデックス情報の取得に失敗しました: ${error}`)
     }
   }
 
@@ -177,13 +256,15 @@ export class PostgreSQLDatabaseRepository implements DatabaseRepository {
       const columns = await this.retrieveColumns(row.table_name)
       const constraints = await this.retrieveReferentialConstraints(row.table_name)
       const tableComment = await this.retrieveTableComment(row.table_name)
+      const indexes = await this.retrieveIndexes(row.table_name, row.table_schema)
 
       const table = createTable(
         row.table_name,
         tableComment,
         row.table_schema,
         columns,
-        constraints
+        constraints,
+        indexes
       )
 
       tables.push(table)

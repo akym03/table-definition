@@ -164,19 +164,19 @@ export function getIndexes(table: Table): DbIndex[] {
  * 特定のインデックスを名前で取得
  */
 export function getIndexByName(table: Table, indexName: string): DbIndex | undefined {
-  return table.indexes.find(index => index.indexName === indexName)
+  return table.indexes.find((index) => index.indexName === indexName)
 }
 
 /**
  * ユニークインデックスを取得
  */
 export function getUniqueIndexes(table: Table): DbIndex[] {
-  return table.indexes.filter(index => index.isUnique)
+  return table.indexes.filter((index) => index.isUnique)
 }
 
 /**
  * 主キーインデックスを取得
  */
 export function getPrimaryKeyIndex(table: Table): DbIndex | undefined {
-  return table.indexes.find(index => index.indexName.toLowerCase() === 'primary')
+  return table.indexes.find((index) => index.indexName.toLowerCase() === 'primary')
 }

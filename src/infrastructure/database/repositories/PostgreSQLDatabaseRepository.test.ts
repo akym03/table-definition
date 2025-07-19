@@ -942,6 +942,137 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
     })
   })
 
+  describe('インデックス情報取得', () => {
+    describe('主キーインデックス', () => {
+      it('単一主キーインデックス（customersテーブル）を正しく取得できる', async () => {
+        const indexes = await repository.retrieveIndexes('customers')
+
+        expect(indexes).toBeDefined()
+        expect(Array.isArray(indexes)).toBe(true)
+        expect(indexes.length).toBeGreaterThan(0)
+
+        // 主キーインデックスの存在確認
+        const primaryIndex = indexes.find((index) => 
+          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        )
+        expect(primaryIndex).toBeDefined()
+        expect(primaryIndex!.tableName).toBe('customers')
+        expect(primaryIndex!.isUnique).toBe(true)
+        expect(primaryIndex!.columns).toEqual(['id'])
+        expect(primaryIndex!.indexType).toBeDefined()
+      })
+
+      it('複合主キーインデックス（project_membersテーブル）を正しく取得できる', async () => {
+        const indexes = await repository.retrieveIndexes('project_members')
+
+        expect(indexes).toBeDefined()
+        expect(Array.isArray(indexes)).toBe(true)
+        expect(indexes.length).toBeGreaterThan(0)
+
+        // 複合主キーインデックスの存在確認
+        const primaryIndex = indexes.find((index) => 
+          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        )
+        expect(primaryIndex).toBeDefined()
+        expect(primaryIndex!.tableName).toBe('project_members')
+        expect(primaryIndex!.isUnique).toBe(true)
+        expect(primaryIndex!.columns.length).toBe(2)
+        expect(primaryIndex!.columns).toContain('project_id')
+        expect(primaryIndex!.columns).toContain('employee_id')
+      })
+    })
+
+    describe('ユニーク制約インデックス', () => {
+      it('ユニーク制約インデックス（customersテーブルのemail）を正しく取得できる', async () => {
+        const indexes = await repository.retrieveIndexes('customers')
+
+        expect(indexes).toBeDefined()
+        expect(Array.isArray(indexes)).toBe(true)
+        expect(indexes.length).toBeGreaterThan(0)
+
+        // UNIQUE制約インデックスの存在確認
+        const uniqueIndexes = indexes.filter(
+          (index) => index.isUnique && !index.indexName.includes('pkey')
+        )
+        expect(uniqueIndexes.length).toBeGreaterThanOrEqual(1)
+
+        const emailUniqueIndex = uniqueIndexes.find((index) => index.columns.includes('email'))
+        expect(emailUniqueIndex).toBeDefined()
+        expect(emailUniqueIndex!.tableName).toBe('customers')
+        expect(emailUniqueIndex!.isUnique).toBe(true)
+        expect(emailUniqueIndex!.indexType).toBeDefined()
+      })
+    })
+
+    it('存在しないテーブルのインデックス取得は空配列を返す', async () => {
+      const indexes = await repository.retrieveIndexes('nonexistent_table')
+
+      expect(indexes).toBeDefined()
+      expect(Array.isArray(indexes)).toBe(true)
+      expect(indexes.length).toBe(0)
+    })
+
+    it('スキーマ指定でのインデックス取得が正常に動作する', async () => {
+      const indexes = await repository.retrieveIndexes('customers', 'public')
+
+      expect(indexes).toBeDefined()
+      expect(Array.isArray(indexes)).toBe(true)
+      expect(indexes.length).toBeGreaterThan(0)
+
+      // 全てのインデックスが指定されたテーブル名を持つことを確認
+      indexes.forEach((index) => {
+        expect(index.tableName).toBe('customers')
+      })
+    })
+
+    it('インデックスの詳細情報が正しく設定されている', async () => {
+      const indexes = await repository.retrieveIndexes('customers')
+
+      indexes.forEach((index) => {
+        expect(index.tableName).toBe('customers')
+        expect(index.indexName).toBeDefined()
+        expect(typeof index.indexName).toBe('string')
+        expect(index.indexName.length).toBeGreaterThan(0)
+        expect(typeof index.isUnique).toBe('boolean')
+        expect(Array.isArray(index.columns)).toBe(true)
+        expect(index.columns.length).toBeGreaterThan(0)
+        expect(typeof index.indexType).toBe('string')
+
+        // カラム名はすべて有効な文字列であることを確認
+        index.columns.forEach((column) => {
+          expect(typeof column).toBe('string')
+          expect(column.length).toBeGreaterThan(0)
+        })
+      })
+    })
+
+    describe('インデックスがないテーブル', () => {
+      it('主キーのみのテーブル（audit_logsテーブル）でも主キーインデックスは取得できる', async () => {
+        const indexes = await repository.retrieveIndexes('audit_logs')
+
+        expect(indexes).toBeDefined()
+        expect(Array.isArray(indexes)).toBe(true)
+        expect(indexes.length).toBeGreaterThanOrEqual(1)
+
+        // 主キーインデックスの存在確認
+        const primaryIndex = indexes.find((index) => 
+          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        )
+        expect(primaryIndex).toBeDefined()
+        expect(primaryIndex!.tableName).toBe('audit_logs')
+        expect(primaryIndex!.isUnique).toBe(true)
+        expect(primaryIndex!.columns).toEqual(['id'])
+        expect(primaryIndex!.indexType).toBeDefined()
+
+        // 他のインデックスがないことを確認（主キーのみ）
+        const nonPrimaryIndexes = indexes.filter(
+          (index) => !index.indexName.includes('pkey') && !index.indexName.includes('pk_')
+        )
+        expect(nonPrimaryIndexes.length).toBe(0)
+      })
+    })
+  })
+
   describe('エラーハンドリング', () => {
     it('存在しないデータベースへの接続はエラーになる', async () => {
       const invalidRepository = new PostgreSQLDatabaseRepository({

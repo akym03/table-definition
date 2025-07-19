@@ -172,7 +172,7 @@ async function retrieveIndexes(
       [tableName, schema]
     )
 
-    // インデックス名でグループ化
+    // インデックス名でグループ化する
     const indexMap = new Map<string, IndexQueryResult[]>()
 
     for (const row of result.rows) {

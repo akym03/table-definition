@@ -1,6 +1,6 @@
 import { DatabaseRepository } from '@/domain/repositories/DatabaseRepository'
 import { createMySQLDatabaseRepository } from '@/infrastructure/database/repositories/MySQLDatabaseRepository'
-import { PostgreSQLDatabaseRepository } from '@/infrastructure/database/repositories/PostgreSQLDatabaseRepository'
+import { createPostgreSQLDatabaseRepository } from '@/infrastructure/database/repositories/PostgreSQLDatabaseRepository'
 import { DatabaseConnectionConfig, DatabaseType } from '@/shared/types/DatabaseType'
 
 /**
@@ -11,7 +11,7 @@ export function createDatabaseRepository(config: DatabaseConnectionConfig): Data
     case DatabaseType.MYSQL:
       return createMySQLDatabaseRepository(config)
     case DatabaseType.POSTGRESQL:
-      return new PostgreSQLDatabaseRepository(config)
+      return createPostgreSQLDatabaseRepository(config)
     default:
       throw new Error(`サポートされていないデータベース種類: ${config.type}`)
   }

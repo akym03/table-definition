@@ -7,6 +7,7 @@ import {
   ConstraintAction,
   createReferentialConstraint,
 } from '@/domain/entities/ReferentialConstraint'
+import { DbIndex, createDbIndex } from '@/domain/entities/DbIndex'
 import { DatabaseConnectionConfig } from '@/shared/types/DatabaseType'
 import { DatabaseError } from '@/shared/errors/AppError'
 import mysql from 'mysql2/promise'
@@ -55,6 +56,15 @@ interface ReferentialConstraintQueryResult extends mysql.RowDataPacket {
   update_rule: string
 }
 
+interface IndexQueryResult extends mysql.RowDataPacket {
+  table_name: string
+  index_name: string
+  column_name: string
+  seq_in_index: number
+  non_unique: number
+  index_type: string
+}
+
 interface MySQLConnection {
   connection: mysql.Connection | null
   config: DatabaseConnectionConfig
@@ -73,6 +83,8 @@ export function createMySQLDatabaseRepository(
 
   return {
     retrieveTableDefinitions: () => retrieveTableDefinitions(mysqlState),
+    retrieveIndexes: (tableName: string, schemaName?: string) =>
+      retrieveIndexes(mysqlState, tableName, schemaName),
     testConnection: () => testConnection(mysqlState),
     close: () => closeConnection(mysqlState),
   }
@@ -204,13 +216,15 @@ async function retrieveTables(state: MySQLConnection): Promise<Table[]> {
   for (const tableRow of tableRows) {
     const columns = await retrieveColumns(state, tableRow.table_name)
     const constraints = await retrieveReferentialConstraints(state, tableRow.table_name)
+    const indexes = await retrieveIndexes(state, tableRow.table_name, tableRow.table_schema)
 
     const table = createTable(
       tableRow.table_name,
       tableRow.table_comment,
       tableRow.table_schema,
       columns,
-      constraints
+      constraints,
+      indexes
     )
 
     tables.push(table)
@@ -358,4 +372,70 @@ function extractEnumValues(columnType: string): string[] | null {
     .filter((value) => value.length > 0)
 
   return values.length > 0 ? values : null
+}
+
+/**
+ * 指定されたテーブルのインデックス情報を取得
+ */
+async function retrieveIndexes(
+  state: MySQLConnection,
+  tableName: string,
+  schemaName?: string
+): Promise<DbIndex[]> {
+  try {
+    await connectToDatabase(state)
+
+    if (!state.connection) {
+      throw new Error('データベース接続が確立されていません')
+    }
+
+    const schema = schemaName || state.config.database
+
+    const [indexRows] = await state.connection.execute<IndexQueryResult[]>(
+      `
+      SELECT
+        TABLE_NAME as table_name,
+        INDEX_NAME as index_name,
+        COLUMN_NAME as column_name,
+        SEQ_IN_INDEX as seq_in_index,
+        NON_UNIQUE as non_unique,
+        INDEX_TYPE as index_type
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+      ORDER BY INDEX_NAME, SEQ_IN_INDEX
+    `,
+      [schema, tableName]
+    )
+
+    // インデックス名でグループ化
+    const indexMap = new Map<string, IndexQueryResult[]>()
+
+    for (const row of indexRows) {
+      if (!indexMap.has(row.index_name)) {
+        indexMap.set(row.index_name, [])
+      }
+      const indexGroup = indexMap.get(row.index_name) || []
+      indexGroup.push(row)
+      indexMap.set(row.index_name, indexGroup)
+    }
+
+    // DbIndexオブジェクトに変換
+    const indexes: DbIndex[] = []
+
+    for (const [indexName, indexColumns] of indexMap) {
+      // カラムをシーケンス順にソート
+      const sortedColumns = indexColumns.sort((a, b) => a.seq_in_index - b.seq_in_index)
+      const columns = sortedColumns.map((col) => col.column_name)
+      const isUnique = sortedColumns[0].non_unique === 0
+      const indexType = sortedColumns[0].index_type || 'BTREE'
+
+      const dbIndex = createDbIndex(tableName, indexName, isUnique, columns, indexType)
+
+      indexes.push(dbIndex)
+    }
+
+    return indexes
+  } catch (error) {
+    throw new DatabaseError(`インデックス情報の取得に失敗しました: ${error}`)
+  }
 }

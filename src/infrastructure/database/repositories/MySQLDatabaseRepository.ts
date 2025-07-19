@@ -414,7 +414,9 @@ async function retrieveIndexes(
       if (!indexMap.has(row.index_name)) {
         indexMap.set(row.index_name, [])
       }
-      indexMap.get(row.index_name)!.push(row)
+      const indexGroup = indexMap.get(row.index_name) || []
+      indexGroup.push(row)
+      indexMap.set(row.index_name, indexGroup)
     }
 
     // DbIndexオブジェクトに変換

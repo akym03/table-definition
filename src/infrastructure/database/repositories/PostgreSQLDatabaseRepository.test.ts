@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { PostgreSQLDatabaseRepository } from './PostgreSQLDatabaseRepository'
+import { createPostgreSQLDatabaseRepository } from './PostgreSQLDatabaseRepository'
 import { DatabaseConnectionConfig, DatabaseType } from '@/shared/types/DatabaseType'
 import { ConstraintAction } from '@/domain/entities/ReferentialConstraint'
 import {
@@ -26,10 +26,10 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
     database: 'test_database',
   }
 
-  let repository: PostgreSQLDatabaseRepository
+  let repository: ReturnType<typeof createPostgreSQLDatabaseRepository>
 
   beforeAll(() => {
-    repository = new PostgreSQLDatabaseRepository(testConfig)
+    repository = createPostgreSQLDatabaseRepository(testConfig)
   })
 
   afterAll(async () => {
@@ -43,7 +43,7 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
     })
 
     it('不正な接続設定でテスト接続が失敗する', async () => {
-      const invalidRepository = new PostgreSQLDatabaseRepository({
+      const invalidRepository = createPostgreSQLDatabaseRepository({
         ...testConfig,
         password: 'invalid_password',
       })
@@ -952,8 +952,8 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
         expect(indexes.length).toBeGreaterThan(0)
 
         // 主キーインデックスの存在確認
-        const primaryIndex = indexes.find((index) => 
-          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        const primaryIndex = indexes.find(
+          (index) => index.indexName.includes('pkey') || index.indexName.includes('pk_')
         )
         expect(primaryIndex).toBeDefined()
         expect(primaryIndex!.tableName).toBe('customers')
@@ -970,8 +970,8 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
         expect(indexes.length).toBeGreaterThan(0)
 
         // 複合主キーインデックスの存在確認
-        const primaryIndex = indexes.find((index) => 
-          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        const primaryIndex = indexes.find(
+          (index) => index.indexName.includes('pkey') || index.indexName.includes('pk_')
         )
         expect(primaryIndex).toBeDefined()
         expect(primaryIndex!.tableName).toBe('project_members')
@@ -1055,8 +1055,8 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
         expect(indexes.length).toBeGreaterThanOrEqual(1)
 
         // 主キーインデックスの存在確認
-        const primaryIndex = indexes.find((index) => 
-          index.indexName.includes('pkey') || index.indexName.includes('pk_')
+        const primaryIndex = indexes.find(
+          (index) => index.indexName.includes('pkey') || index.indexName.includes('pk_')
         )
         expect(primaryIndex).toBeDefined()
         expect(primaryIndex!.tableName).toBe('audit_logs')
@@ -1075,7 +1075,7 @@ describe('PostgreSQLDatabaseRepository 統合テスト', () => {
 
   describe('エラーハンドリング', () => {
     it('存在しないデータベースへの接続はエラーになる', async () => {
-      const invalidRepository = new PostgreSQLDatabaseRepository({
+      const invalidRepository = createPostgreSQLDatabaseRepository({
         ...testConfig,
         database: 'nonexistent_database',
       })

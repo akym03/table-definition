@@ -71,470 +71,501 @@ interface IndexQueryResult {
   index_type: string
 }
 
+interface PostgreSQLConnection {
+  client: Client | null
+  config: DatabaseConnectionConfig
+}
+
 /**
- * PostgreSQL用データベースリポジトリ実装
+ * PostgreSQL用データベースリポジトリを作成
  */
-export class PostgreSQLDatabaseRepository implements DatabaseRepository {
-  private client: Client | null = null
-
-  constructor(private readonly config: DatabaseConnectionConfig) {}
-
-  /**
-   * テーブル定義情報を取得
-   */
-  async retrieveTableDefinitions(): Promise<Database> {
-    try {
-      await this.connect()
-
-      const databaseInfo = await this.retrieveDatabaseInfo()
-      const tables = await this.retrieveTables()
-
-      return createDatabase(
-        databaseInfo.name,
-        databaseInfo.version,
-        databaseInfo.charset,
-        databaseInfo.collation,
-        tables
-      )
-    } catch (error) {
-      throw new DatabaseError(`テーブル定義の取得に失敗しました: ${error}`)
-    }
+export function createPostgreSQLDatabaseRepository(
+  config: DatabaseConnectionConfig
+): DatabaseRepository {
+  let postgreSQLState: PostgreSQLConnection = {
+    client: null,
+    config,
   }
 
-  /**
-   * 接続をテスト
-   */
-  async testConnection(): Promise<boolean> {
-    try {
-      await this.connect()
-      return true
-    } catch {
-      return false
-    }
+  return {
+    retrieveTableDefinitions: () => retrieveTableDefinitions(postgreSQLState),
+    retrieveIndexes: (tableName: string, schemaName?: string) =>
+      retrieveIndexes(postgreSQLState, tableName, schemaName),
+    testConnection: () => testConnection(postgreSQLState),
+    close: () => closeConnection(postgreSQLState),
   }
+}
 
-  /**
-   * インデックス情報を取得
-   */
-  async retrieveIndexes(tableName: string, schemaName?: string): Promise<DbIndex[]> {
-    try {
-      await this.connect()
+/**
+ * テーブル定義情報を取得
+ */
+async function retrieveTableDefinitions(state: PostgreSQLConnection): Promise<Database> {
+  try {
+    await connectToDatabase(state)
 
-      if (!this.client) {
-        throw new Error('データベース接続が確立されていません')
-      }
+    const databaseInfo = await retrieveDatabaseInfo(state)
+    const tables = await retrieveTables(state)
 
-      const schema = schemaName || 'public'
-
-      const result = await this.client.query<IndexQueryResult>(
-        `
-        SELECT
-          t.relname as table_name,
-          i.relname as index_name,
-          a.attname as column_name,
-          a.attnum as seq_in_index,
-          ix.indisunique as is_unique,
-          am.amname as index_type
-        FROM pg_class t
-        JOIN pg_index ix ON t.oid = ix.indrelid
-        JOIN pg_class i ON i.oid = ix.indexrelid
-        JOIN pg_attribute a ON a.attrelid = t.oid
-        JOIN pg_am am ON i.relam = am.oid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE t.relname = $1
-          AND n.nspname = $2
-          AND a.attnum = ANY(ix.indkey)
-          AND a.attnum > 0
-          AND NOT a.attisdropped
-        ORDER BY i.relname, a.attnum
-      `,
-        [tableName, schema]
-      )
-
-      // インデックス名でグループ化
-      const indexMap = new Map<string, IndexQueryResult[]>()
-
-      for (const row of result.rows) {
-        if (!indexMap.has(row.index_name)) {
-          indexMap.set(row.index_name, [])
-        }
-        indexMap.get(row.index_name)!.push(row)
-      }
-
-      // DbIndexオブジェクトに変換
-      const indexes: DbIndex[] = []
-
-      for (const [indexName, indexColumns] of indexMap) {
-        // カラムをシーケンス順にソート
-        const sortedColumns = indexColumns.sort((a, b) => a.seq_in_index - b.seq_in_index)
-        const columns = sortedColumns.map((col) => col.column_name)
-        const isUnique = sortedColumns[0].is_unique
-        const indexType = sortedColumns[0].index_type || 'btree'
-
-        const dbIndex = createDbIndex(tableName, indexName, isUnique, columns, indexType)
-
-        indexes.push(dbIndex)
-      }
-
-      return indexes
-    } catch (error) {
-      throw new DatabaseError(`インデックス情報の取得に失敗しました: ${error}`)
-    }
-  }
-
-  /**
-   * 接続を閉じる
-   */
-  async close(): Promise<void> {
-    if (this.client) {
-      await this.client.end()
-      this.client = null
-    }
-  }
-
-  /**
-   * データベースに接続
-   */
-  private async connect(): Promise<void> {
-    if (this.client) {
-      return
-    }
-
-    this.client = new Client({
-      host: this.config.host,
-      port: this.config.port,
-      user: this.config.username,
-      password: this.config.password,
-      database: this.config.database,
-    })
-
-    await this.client.connect()
-  }
-
-  /**
-   * データベース情報を取得
-   */
-  private async retrieveDatabaseInfo(): Promise<DatabaseInfo> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const versionResult = await this.client.query<VersionQueryResult>('SELECT version()')
-    const versionRow = versionResult.rows[0]
-
-    if (!versionRow || !isValidVersionResult(versionRow)) {
-      throw new Error('データベースバージョン情報の取得に失敗しました')
-    }
-
-    return {
-      name: this.config.database,
-      version: versionRow.version,
-      charset: 'UTF8',
-      collation: 'en_US.UTF-8',
-    }
-  }
-
-  /**
-   * テーブル一覧を取得
-   */
-  private async retrieveTables(): Promise<Table[]> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<TableQueryResult>(`
-      SELECT table_name, table_schema
-      FROM information_schema.tables
-      WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-        AND table_type = 'BASE TABLE'
-      ORDER BY table_name
-    `)
-
-    const tables: Table[] = []
-
-    for (const row of result.rows) {
-      const columns = await this.retrieveColumns(row.table_name)
-      const constraints = await this.retrieveReferentialConstraints(row.table_name)
-      const tableComment = await this.retrieveTableComment(row.table_name)
-      const indexes = await this.retrieveIndexes(row.table_name, row.table_schema)
-
-      const table = createTable(
-        row.table_name,
-        tableComment,
-        row.table_schema,
-        columns,
-        constraints,
-        indexes
-      )
-
-      tables.push(table)
-    }
-
-    return tables
-  }
-
-  /**
-   * カラム一覧を取得
-   */
-  private async retrieveColumns(tableName: string): Promise<Column[]> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<ColumnQueryResult>(
-      `
-      with
-        enums as (
-          SELECT
-            n.nspname as schema_name,
-            t.typname AS enum_type,
-            array_to_string (array_agg (e.enumlabel ORDER BY e.enumsortorder), ',') AS enum_values
-          FROM
-            pg_type t
-            JOIN pg_enum e ON t.oid = e.enumtypid
-            JOIN pg_namespace n ON n.oid = t.typnamespace
-          GROUP BY
-            n.nspname,
-            t.typname
-          ORDER BY
-            n.nspname,
-            t.typname
-        )
-      SELECT
-        c.column_name,
-        c.data_type,
-        c.is_nullable,
-        c.column_default,
-        c.character_maximum_length,
-        c.numeric_precision,
-        c.numeric_scale,
-        e.enum_type,
-        e.enum_values
-      FROM
-        information_schema.columns as c
-        LEFT OUTER JOIN enums e ON c.table_schema = e.schema_name
-        and c.udt_name = e.enum_type
-      WHERE
-        c.table_name = $1
-      ORDER BY
-        c.ordinal_position
-    `,
-      [tableName]
+    return createDatabase(
+      databaseInfo.name,
+      databaseInfo.version,
+      databaseInfo.charset,
+      databaseInfo.collation,
+      tables
     )
-
-    // 主キー情報を取得
-    const primaryKeys = await this.retrievePrimaryKeys(tableName)
-    const primaryKeyColumns = new Set(primaryKeys.map((pk) => pk.column_name))
-
-    // ユニーク制約情報を取得
-    const uniqueConstraints = await this.retrieveUniqueConstraints(tableName)
-    const uniqueColumns = new Set(uniqueConstraints.map((uc) => uc.column_name))
-
-    // カラムコメント情報を取得
-    const columnComments = await this.retrieveColumnComments(tableName)
-    const commentMap = new Map(columnComments.map((cc) => [cc.column_name, cc.column_comment]))
-
-    const dataTypeConverter = (data_type: string, enum_type: string | null): string => {
-      if (enum_type !== null) {
-        return 'enum'
-      }
-      return data_type
-    }
-
-    const DEFAULT_FOREIGN_KEY_CONSTRAINT = null
-
-    return result.rows.map((row) => {
-      return createColumn(
-        row.column_name,
-        commentMap.get(row.column_name) || null,
-        dataTypeConverter(row.data_type, row.enum_type),
-        row.is_nullable === 'YES',
-        row.column_default,
-        row.character_maximum_length,
-        row.numeric_precision,
-        row.numeric_scale,
-        primaryKeyColumns.has(row.column_name),
-        uniqueColumns.has(row.column_name),
-        row.column_default?.includes('nextval') || false,
-        DEFAULT_FOREIGN_KEY_CONSTRAINT,
-        extractEnumValues(row.enum_values)
-      )
-    })
+  } catch (error) {
+    throw new DatabaseError(`テーブル定義の取得に失敗しました: ${error}`)
   }
+}
 
-  /**
-   * 主キー情報を取得
-   */
-  private async retrievePrimaryKeys(tableName: string): Promise<PrimaryKeyQueryResult[]> {
-    if (!this.client) {
+/**
+ * 接続をテスト
+ */
+async function testConnection(state: PostgreSQLConnection): Promise<boolean> {
+  try {
+    await connectToDatabase(state)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * インデックス情報を取得
+ */
+async function retrieveIndexes(
+  state: PostgreSQLConnection,
+  tableName: string,
+  schemaName?: string
+): Promise<DbIndex[]> {
+  try {
+    await connectToDatabase(state)
+
+    if (!state.client) {
       throw new Error('データベース接続が確立されていません')
     }
 
-    const result = await this.client.query<PrimaryKeyQueryResult>(
-      `
-      SELECT a.attname as column_name
-      FROM pg_constraint con
-      JOIN pg_class rel ON rel.oid = con.conrelid
-      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-      JOIN pg_attribute a ON a.attrelid = con.conrelid
-        AND a.attnum = ANY(con.conkey)
-      WHERE con.contype = 'p'
-        AND rel.relname = $1
-        AND nsp.nspname = 'public'
-      ORDER BY array_position(con.conkey, a.attnum)
-    `,
-      [tableName]
-    )
+    const schema = schemaName || 'public'
 
-    return result.rows
-  }
-
-  /**
-   * ユニーク制約情報を取得
-   */
-  private async retrieveUniqueConstraints(
-    tableName: string
-  ): Promise<UniqueConstraintQueryResult[]> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<UniqueConstraintQueryResult>(
-      `
-      SELECT a.attname as column_name
-      FROM pg_constraint con
-      JOIN pg_class rel ON rel.oid = con.conrelid
-      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-      JOIN pg_attribute a ON a.attrelid = con.conrelid
-        AND a.attnum = ANY(con.conkey)
-      WHERE con.contype = 'u'
-        AND rel.relname = $1
-        AND nsp.nspname = 'public'
-      ORDER BY array_position(con.conkey, a.attnum)
-    `,
-      [tableName]
-    )
-
-    return result.rows
-  }
-
-  /**
-   * 参照整合性制約を取得
-   */
-  private async retrieveReferentialConstraints(
-    tableName: string
-  ): Promise<ReferentialConstraint[]> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<ReferentialConstraintQueryResult>(
+    const result = await state.client.query<IndexQueryResult>(
       `
       SELECT
-        con.conname as constraint_name,
-        src_rel.relname as source_table,
-        src_att.attname as column_name,
-        foreign_rel.relname AS foreign_table_name,
-        foreign_att.attname AS foreign_column_name,
-        con.confdeltype as delete_rule,
-        con.confupdtype as update_rule
-      FROM pg_constraint con
-      JOIN pg_class src_rel ON src_rel.oid = con.conrelid
-      JOIN pg_namespace src_nsp ON src_nsp.oid = src_rel.relnamespace
-      JOIN pg_attribute src_att ON src_att.attrelid = con.conrelid
-        AND src_att.attnum = ANY(con.conkey)
-      JOIN pg_class foreign_rel ON foreign_rel.oid = con.confrelid
-      JOIN pg_attribute foreign_att ON foreign_att.attrelid = con.confrelid
-        AND foreign_att.attnum = con.confkey[array_position(con.conkey, src_att.attnum)]
-      WHERE con.contype = 'f'
-        AND src_rel.relname = $1
-        AND src_nsp.nspname = 'public'
-      ORDER BY con.conname
-    `,
-      [tableName]
-    )
-
-    return result.rows.map((row) =>
-      createReferentialConstraint(
-        row.constraint_name,
-        row.source_table,
-        row.column_name,
-        row.foreign_table_name,
-        row.foreign_column_name,
-        this.mapConstraintActionChar(row.delete_rule),
-        this.mapConstraintActionChar(row.update_rule),
-        true
-      )
-    )
-  }
-
-  /**
-   * PostgreSQLのpg_constraintテーブルの制約アクション文字をマップ
-   */
-  private mapConstraintActionChar(actionChar: string): ConstraintAction {
-    switch (actionChar) {
-      case 'c':
-        return ConstraintAction.CASCADE
-      case 'r':
-        return ConstraintAction.RESTRICT
-      case 'n':
-        return ConstraintAction.SET_NULL
-      case 'd':
-        return ConstraintAction.SET_DEFAULT
-      case 'a':
-      default:
-        return ConstraintAction.NO_ACTION
-    }
-  }
-
-  /**
-   * テーブルコメントを取得
-   */
-  private async retrieveTableComment(tableName: string): Promise<string | null> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<TableCommentQueryResult>(
-      `
-      SELECT obj_description(c.oid) as table_comment
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relname = $1 AND n.nspname = 'public'
-    `,
-      [tableName]
-    )
-
-    return result.rows[0]?.table_comment || null
-  }
-
-  /**
-   * カラムコメントを取得
-   */
-  private async retrieveColumnComments(tableName: string): Promise<ColumnCommentQueryResult[]> {
-    if (!this.client) {
-      throw new Error('データベース接続が確立されていません')
-    }
-
-    const result = await this.client.query<ColumnCommentQueryResult>(
-      `
-      SELECT
+        t.relname as table_name,
+        i.relname as index_name,
         a.attname as column_name,
-        col_description(a.attrelid, a.attnum) as column_comment
-      FROM pg_attribute a
-      JOIN pg_class c ON c.oid = a.attrelid
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relname = $1
-        AND n.nspname = 'public'
+        a.attnum as seq_in_index,
+        ix.indisunique as is_unique,
+        am.amname as index_type
+      FROM pg_class t
+      JOIN pg_index ix ON t.oid = ix.indrelid
+      JOIN pg_class i ON i.oid = ix.indexrelid
+      JOIN pg_attribute a ON a.attrelid = t.oid
+      JOIN pg_am am ON i.relam = am.oid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE t.relname = $1
+        AND n.nspname = $2
+        AND a.attnum = ANY(ix.indkey)
         AND a.attnum > 0
         AND NOT a.attisdropped
-      ORDER BY a.attnum
+      ORDER BY i.relname, a.attnum
     `,
-      [tableName]
+      [tableName, schema]
     )
 
-    return result.rows
+    // インデックス名でグループ化
+    const indexMap = new Map<string, IndexQueryResult[]>()
+
+    for (const row of result.rows) {
+      if (!indexMap.has(row.index_name)) {
+        indexMap.set(row.index_name, [])
+      }
+      indexMap.get(row.index_name)!.push(row)
+    }
+
+    // DbIndexオブジェクトに変換
+    const indexes: DbIndex[] = []
+
+    for (const [indexName, indexColumns] of indexMap) {
+      // カラムをシーケンス順にソート
+      const sortedColumns = indexColumns.sort((a, b) => a.seq_in_index - b.seq_in_index)
+      const columns = sortedColumns.map((col) => col.column_name)
+      const isUnique = sortedColumns[0].is_unique
+      const indexType = sortedColumns[0].index_type || 'btree'
+
+      const dbIndex = createDbIndex(tableName, indexName, isUnique, columns, indexType)
+
+      indexes.push(dbIndex)
+    }
+
+    return indexes
+  } catch (error) {
+    throw new DatabaseError(`インデックス情報の取得に失敗しました: ${error}`)
   }
+}
+
+/**
+ * 接続を閉じる
+ */
+async function closeConnection(state: PostgreSQLConnection): Promise<void> {
+  if (state.client) {
+    await state.client.end()
+    state.client = null
+  }
+}
+
+/**
+ * データベースに接続
+ */
+async function connectToDatabase(state: PostgreSQLConnection): Promise<void> {
+  if (state.client) {
+    return
+  }
+
+  state.client = new Client({
+    host: state.config.host,
+    port: state.config.port,
+    user: state.config.username,
+    password: state.config.password,
+    database: state.config.database,
+  })
+
+  await state.client.connect()
+}
+
+/**
+ * データベース情報を取得
+ */
+async function retrieveDatabaseInfo(state: PostgreSQLConnection): Promise<DatabaseInfo> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const versionResult = await state.client.query<VersionQueryResult>('SELECT version()')
+  const versionRow = versionResult.rows[0]
+
+  if (!versionRow || !isValidVersionResult(versionRow)) {
+    throw new Error('データベースバージョン情報の取得に失敗しました')
+  }
+
+  return {
+    name: state.config.database,
+    version: versionRow.version,
+    charset: 'UTF8',
+    collation: 'en_US.UTF-8',
+  }
+}
+
+/**
+ * テーブル一覧を取得
+ */
+async function retrieveTables(state: PostgreSQLConnection): Promise<Table[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<TableQueryResult>(`
+    SELECT table_name, table_schema
+    FROM information_schema.tables
+    WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+      AND table_type = 'BASE TABLE'
+    ORDER BY table_name
+  `)
+
+  const tables: Table[] = []
+
+  for (const row of result.rows) {
+    const columns = await retrieveColumns(state, row.table_name)
+    const constraints = await retrieveReferentialConstraints(state, row.table_name)
+    const tableComment = await retrieveTableComment(state, row.table_name)
+    const indexes = await retrieveIndexes(state, row.table_name, row.table_schema)
+
+    const table = createTable(
+      row.table_name,
+      tableComment,
+      row.table_schema,
+      columns,
+      constraints,
+      indexes
+    )
+
+    tables.push(table)
+  }
+
+  return tables
+}
+
+/**
+ * カラム一覧を取得
+ */
+async function retrieveColumns(state: PostgreSQLConnection, tableName: string): Promise<Column[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<ColumnQueryResult>(
+    `
+    with
+      enums as (
+        SELECT
+          n.nspname as schema_name,
+          t.typname AS enum_type,
+          array_to_string (array_agg (e.enumlabel ORDER BY e.enumsortorder), ',') AS enum_values
+        FROM
+          pg_type t
+          JOIN pg_enum e ON t.oid = e.enumtypid
+          JOIN pg_namespace n ON n.oid = t.typnamespace
+        GROUP BY
+          n.nspname,
+          t.typname
+        ORDER BY
+          n.nspname,
+          t.typname
+      )
+    SELECT
+      c.column_name,
+      c.data_type,
+      c.is_nullable,
+      c.column_default,
+      c.character_maximum_length,
+      c.numeric_precision,
+      c.numeric_scale,
+      e.enum_type,
+      e.enum_values
+    FROM
+      information_schema.columns as c
+      LEFT OUTER JOIN enums e ON c.table_schema = e.schema_name
+      and c.udt_name = e.enum_type
+    WHERE
+      c.table_name = $1
+    ORDER BY
+      c.ordinal_position
+  `,
+    [tableName]
+  )
+
+  // 主キー情報を取得
+  const primaryKeys = await retrievePrimaryKeys(state, tableName)
+  const primaryKeyColumns = new Set(primaryKeys.map((pk) => pk.column_name))
+
+  // ユニーク制約情報を取得
+  const uniqueConstraints = await retrieveUniqueConstraints(state, tableName)
+  const uniqueColumns = new Set(uniqueConstraints.map((uc) => uc.column_name))
+
+  // カラムコメント情報を取得
+  const columnComments = await retrieveColumnComments(state, tableName)
+  const commentMap = new Map(columnComments.map((cc) => [cc.column_name, cc.column_comment]))
+
+  const dataTypeConverter = (data_type: string, enum_type: string | null): string => {
+    if (enum_type !== null) {
+      return 'enum'
+    }
+    return data_type
+  }
+
+  const DEFAULT_FOREIGN_KEY_CONSTRAINT = null
+
+  return result.rows.map((row) => {
+    return createColumn(
+      row.column_name,
+      commentMap.get(row.column_name) || null,
+      dataTypeConverter(row.data_type, row.enum_type),
+      row.is_nullable === 'YES',
+      row.column_default,
+      row.character_maximum_length,
+      row.numeric_precision,
+      row.numeric_scale,
+      primaryKeyColumns.has(row.column_name),
+      uniqueColumns.has(row.column_name),
+      row.column_default?.includes('nextval') || false,
+      DEFAULT_FOREIGN_KEY_CONSTRAINT,
+      extractEnumValues(row.enum_values)
+    )
+  })
+}
+
+/**
+ * 主キー情報を取得
+ */
+async function retrievePrimaryKeys(
+  state: PostgreSQLConnection,
+  tableName: string
+): Promise<PrimaryKeyQueryResult[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<PrimaryKeyQueryResult>(
+    `
+    SELECT a.attname as column_name
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    JOIN pg_attribute a ON a.attrelid = con.conrelid
+      AND a.attnum = ANY(con.conkey)
+    WHERE con.contype = 'p'
+      AND rel.relname = $1
+      AND nsp.nspname = 'public'
+    ORDER BY array_position(con.conkey, a.attnum)
+  `,
+    [tableName]
+  )
+
+  return result.rows
+}
+
+/**
+ * ユニーク制約情報を取得
+ */
+async function retrieveUniqueConstraints(
+  state: PostgreSQLConnection,
+  tableName: string
+): Promise<UniqueConstraintQueryResult[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<UniqueConstraintQueryResult>(
+    `
+    SELECT a.attname as column_name
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    JOIN pg_attribute a ON a.attrelid = con.conrelid
+      AND a.attnum = ANY(con.conkey)
+    WHERE con.contype = 'u'
+      AND rel.relname = $1
+      AND nsp.nspname = 'public'
+    ORDER BY array_position(con.conkey, a.attnum)
+  `,
+    [tableName]
+  )
+
+  return result.rows
+}
+
+/**
+ * 参照整合性制約を取得
+ */
+async function retrieveReferentialConstraints(
+  state: PostgreSQLConnection,
+  tableName: string
+): Promise<ReferentialConstraint[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<ReferentialConstraintQueryResult>(
+    `
+    SELECT
+      con.conname as constraint_name,
+      src_rel.relname as source_table,
+      src_att.attname as column_name,
+      foreign_rel.relname AS foreign_table_name,
+      foreign_att.attname AS foreign_column_name,
+      con.confdeltype as delete_rule,
+      con.confupdtype as update_rule
+    FROM pg_constraint con
+    JOIN pg_class src_rel ON src_rel.oid = con.conrelid
+    JOIN pg_namespace src_nsp ON src_nsp.oid = src_rel.relnamespace
+    JOIN pg_attribute src_att ON src_att.attrelid = con.conrelid
+      AND src_att.attnum = ANY(con.conkey)
+    JOIN pg_class foreign_rel ON foreign_rel.oid = con.confrelid
+    JOIN pg_attribute foreign_att ON foreign_att.attrelid = con.confrelid
+      AND foreign_att.attnum = con.confkey[array_position(con.conkey, src_att.attnum)]
+    WHERE con.contype = 'f'
+      AND src_rel.relname = $1
+      AND src_nsp.nspname = 'public'
+    ORDER BY con.conname
+  `,
+    [tableName]
+  )
+
+  return result.rows.map((row) =>
+    createReferentialConstraint(
+      row.constraint_name,
+      row.source_table,
+      row.column_name,
+      row.foreign_table_name,
+      row.foreign_column_name,
+      mapConstraintActionChar(row.delete_rule),
+      mapConstraintActionChar(row.update_rule),
+      true
+    )
+  )
+}
+
+/**
+ * PostgreSQLのpg_constraintテーブルの制約アクション文字をマップ
+ */
+function mapConstraintActionChar(actionChar: string): ConstraintAction {
+  switch (actionChar) {
+    case 'c':
+      return ConstraintAction.CASCADE
+    case 'r':
+      return ConstraintAction.RESTRICT
+    case 'n':
+      return ConstraintAction.SET_NULL
+    case 'd':
+      return ConstraintAction.SET_DEFAULT
+    case 'a':
+    default:
+      return ConstraintAction.NO_ACTION
+  }
+}
+
+/**
+ * テーブルコメントを取得
+ */
+async function retrieveTableComment(
+  state: PostgreSQLConnection,
+  tableName: string
+): Promise<string | null> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<TableCommentQueryResult>(
+    `
+    SELECT obj_description(c.oid) as table_comment
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = $1 AND n.nspname = 'public'
+  `,
+    [tableName]
+  )
+
+  return result.rows[0]?.table_comment || null
+}
+
+/**
+ * カラムコメントを取得
+ */
+async function retrieveColumnComments(
+  state: PostgreSQLConnection,
+  tableName: string
+): Promise<ColumnCommentQueryResult[]> {
+  if (!state.client) {
+    throw new Error('データベース接続が確立されていません')
+  }
+
+  const result = await state.client.query<ColumnCommentQueryResult>(
+    `
+    SELECT
+      a.attname as column_name,
+      col_description(a.attrelid, a.attnum) as column_comment
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = $1
+      AND n.nspname = 'public'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+    ORDER BY a.attnum
+  `,
+    [tableName]
+  )
+
+  return result.rows
 }
 
 /**

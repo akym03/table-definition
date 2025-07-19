@@ -6,6 +6,7 @@ import {
   hasForeignKey,
 } from './Column'
 import { ReferentialConstraint } from '@/domain/entities/ReferentialConstraint'
+import { DbIndex } from '@/domain/entities/DbIndex'
 
 /**
  * データベーステーブルを表現するエンティティ
@@ -15,6 +16,7 @@ export interface Table {
   readonly schema: string
   readonly columns: Column[]
   readonly referentialConstraints: ReferentialConstraint[]
+  readonly indexes: DbIndex[]
 }
 
 /**
@@ -25,13 +27,15 @@ export function createTable(
   comment: string | null,
   schema: string,
   columns: Column[],
-  referentialConstraints: ReferentialConstraint[] = []
+  referentialConstraints: ReferentialConstraint[] = [],
+  indexes: DbIndex[] = []
 ): Table {
   return {
     name: createName(physicalName, comment),
     schema,
     columns,
     referentialConstraints,
+    indexes,
   }
 }
 
@@ -147,4 +151,32 @@ export function getDefinitionWithLogicalName(table: Table): string {
     return `${definition} -- ${getLogicalName(table)}`
   }
   return definition
+}
+
+/**
+ * テーブルのインデックスを取得
+ */
+export function getIndexes(table: Table): DbIndex[] {
+  return table.indexes
+}
+
+/**
+ * 特定のインデックスを名前で取得
+ */
+export function getIndexByName(table: Table, indexName: string): DbIndex | undefined {
+  return table.indexes.find(index => index.indexName === indexName)
+}
+
+/**
+ * ユニークインデックスを取得
+ */
+export function getUniqueIndexes(table: Table): DbIndex[] {
+  return table.indexes.filter(index => index.isUnique)
+}
+
+/**
+ * 主キーインデックスを取得
+ */
+export function getPrimaryKeyIndex(table: Table): DbIndex | undefined {
+  return table.indexes.find(index => index.indexName.toLowerCase() === 'primary')
 }
